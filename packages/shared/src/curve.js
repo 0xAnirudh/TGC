@@ -113,3 +113,33 @@ function assertQty(qty) {
     throw new RangeError(`qty must be a positive integer, got ${qty}`);
   }
 }
+
+/**
+ * Full breakdown of a sell: what the curve gives back, what the spread
+ * takes, and what the seller actually receives.
+ *
+ * The spread is the economy's primary sink. It is burned - it does not
+ * go to a treasury, another player, or the issuer. Notes leave
+ * circulation permanently.
+ *
+ * This is what makes an immediate round trip strictly lossy. Buying `q`
+ * units and selling them straight back walks the same stretch of curve
+ * in both directions, so the gross return equals the cost exactly; the
+ * spread is the whole difference, and it is always against the player.
+ * Without it, price manipulation would be free and the only thing
+ * stopping a bot from churning a good would be rate limits.
+ *
+ * The spread is taken from the gross, so `net + spread === gross` holds
+ * exactly in integers. The money supply invariant depends on that
+ * identity, so it is asserted rather than assumed.
+ */
+export function sellBreakdown(basePrice, supply, qty, k, n) {
+  const gross = grossSellValue(basePrice, supply, qty, k, n);
+  const net = Math.floor((gross * (BPS - SELL_SPREAD_BPS)) / BPS);
+  return { gross, spread: gross - net, net };
+}
+
+/** Notes the seller receives, after the spread. */
+export function sellReturn(basePrice, supply, qty, k, n) {
+  return sellBreakdown(basePrice, supply, qty, k, n).net;
+}
