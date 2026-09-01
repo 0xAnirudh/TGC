@@ -48,3 +48,68 @@ function assertCurve(basePrice, supply, k, n) {
 }
 
 export { assertCurve };
+
+/**
+ * Antiderivative of the price function with respect to supply:
+ *
+ *     F(s) = basePrice * k / (n + 1) * (1 + s / k) ^ (n + 1)
+ *
+ * The cost of moving supply from a to b is exactly F(b) - F(a). Having a
+ * closed form matters: execution must be a handful of arithmetic ops
+ * inside a Lua script, not a numeric integration loop.
+ */
+function integral(basePrice, supply, k, n) {
+  return ((basePrice * k) / (n + 1)) * Math.pow(1 + supply / k, n + 1);
+}
+
+/**
+ * Notes required to buy `qty` units when current supply is `supply`.
+ *
+ * Rounded up, so the player never pays less than the curve says.
+ */
+export function buyCost(basePrice, supply, qty, k, n) {
+  assertCurve(basePrice, supply, k, n);
+  assertQty(qty);
+  const raw =
+    integral(basePrice, supply + qty, k, n) - integral(basePrice, supply, k, n);
+  return Math.ceil(raw);
+}
+
+/**
+ * Notes a sale of `qty` units is worth before the spread is taken.
+ *
+ * Rounded down, so the player never receives more than the curve says.
+ * Selling walks the curve backwards from `supply` to `supply - qty`, so
+ * the seller is paid the same integral the last buyer paid in - minus
+ * whatever drift has happened to basePrice since.
+ */
+export function grossSellValue(basePrice, supply, qty, k, n) {
+  assertCurve(basePrice, supply, k, n);
+  assertQty(qty);
+  if (qty > supply) {
+    throw new RangeError(`cannot sell ${qty} units into a supply of ${supply}`);
+  }
+  const raw =
+    integral(basePrice, supply, k, n) - integral(basePrice, supply - qty, k, n);
+  return Math.floor(raw);
+}
+
+/**
+ * Notes the curve has taken in to reach `supply` from zero.
+ *
+ * This is the reserve the curve would owe if every holder sold at once
+ * and basePrice had never drifted. The running system does not compute
+ * the reserve this way - it tracks it as an explicit accumulator, because
+ * drift moves the curve out from under the Notes already paid in. This
+ * function is the cross-check that the two agree when drift is off.
+ */
+export function reserveAt(basePrice, supply, k, n) {
+  assertCurve(basePrice, supply, k, n);
+  return integral(basePrice, supply, k, n) - integral(basePrice, 0, k, n);
+}
+
+function assertQty(qty) {
+  if (!Number.isInteger(qty) || qty <= 0) {
+    throw new RangeError(`qty must be a positive integer, got ${qty}`);
+  }
+}
