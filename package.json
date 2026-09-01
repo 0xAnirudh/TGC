@@ -1,0 +1,22 @@
+{
+  "name": "tgc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "General Company - a player-driven virtual economy",
+  "workspaces": [
+    "packages/*",
+    "sim"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim": "node sim/src/run.js"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
