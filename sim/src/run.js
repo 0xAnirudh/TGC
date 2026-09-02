@@ -194,6 +194,20 @@ function report(economy, history, startPrice, executed) {
     ]),
   );
 
+  // Buys round up and sells round down, so the reserve carries a little
+  // more than the curve integral says it should. The gap is the
+  // accumulated dust, and it always favours the system.
+  const dust = economy.reserve - economy.reserveFromCurve();
+  console.log(`\nRounding`);
+  console.log(
+    table([
+      { term: 'reserve, accumulated', notes: notes(economy.reserve) },
+      { term: 'reserve, from curve integral', notes: notes(Math.round(economy.reserveFromCurve())) },
+      { term: 'dust (must be >= 0)', notes: notes(Math.round(dust)) },
+      { term: 'dust per executed trade', notes: (dust / Math.max(1, executed)).toFixed(4) },
+    ]),
+  );
+
   const violations = economy.checkInvariants();
   console.log(`\n${'='.repeat(72)}`);
   if (violations.length === 0) {

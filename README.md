@@ -20,11 +20,12 @@ built on Redis and MongoDB:
 In development, built in phases. See
 [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the full
 build plan, the requirements analysis, and the record of what was
-deliberately deferred to later versions.
+deliberately deferred to later versions, and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the decision log.
 
 | Phase | | |
 |---|---|---|
-| 0 | Economy simulation | in progress |
+| 0 | Economy simulation | done — `v0.1-simulation` |
 | 1 | Project scaffold | |
 | 2 | Auth and users | |
 | 3 | Goods and quotes | |
@@ -58,3 +59,23 @@ npm install
 npm run sim      # run the economy simulation
 npm test         # run the test suite
 ```
+
+The simulation takes flags: `npm run sim -- --trades=50000 --seed=7
+--players=500`. It is seeded, so a run that fails is a run you can
+reproduce.
+
+## Phase 0 result
+
+The curve math is proven exploit-free before any infrastructure depends
+on it. A default run of 10,000 trades across 200 players and 8 goods:
+
+- round trips are lossy in all 1,500 parameter combinations tested, and
+  chunking a round trip loses more rather than less
+- the money supply balances to the exact Note - `granted == cash +
+  reserve + burned` - at every checkpoint and across six seeds
+- prices plateau between roughly 2x and 5x rather than diverging
+- rounding dust accumulates in the curve reserve at 0.4958 Notes per
+  trade, always positive, always inside the invariant
+
+Details, including the reasoning behind each decision, are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
