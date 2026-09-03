@@ -191,6 +191,19 @@ declaration in the same file as the `KEYS[]` uses it describes stops the
 two drifting apart, and a test asserts every shipped script's
 declaration matches its highest `KEYS[n]`.
 
+**Consequence, learned the hard way:** `defineCommand` turns a script's
+filename into a *method on the client*. It does not add a command
+alongside the real ones - it replaces one. The first script in this
+directory was called `ping.lua`, which overwrote `redis.ping()`; the
+readiness check then invoked the script with no arguments and reported a
+perfectly healthy Redis as down. The loader now throws on any name that
+would shadow an existing client method, so this is a boot-time error
+rather than a runtime mystery the first time someone adds `get.lua`.
+
+Worth noting where this was caught: running the process against a real
+Redis. No unit test could have found it, because none of them construct
+a client.
+
 **Alternative considered: hand-rolled EVALSHA with a NOSCRIPT retry.**
 Rejected in favour of `defineCommand`, which already loads the script,
 caches the SHA, calls EVALSHA, and falls back to EVAL and reloads on

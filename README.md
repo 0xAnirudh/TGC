@@ -26,7 +26,7 @@ deliberately deferred to later versions, and
 | Phase | | |
 |---|---|---|
 | 0 | Economy simulation | done — `v0.1-simulation` |
-| 1 | Project scaffold | done |
+| 1 | Project scaffold | done — verified against Atlas + Redis |
 | 2 | Auth and users | |
 | 3 | Goods and quotes | |
 | 4 | Trading, sequential | |
@@ -55,7 +55,9 @@ docs/              implementation plan, architecture decision log
 ## Running
 
 ```bash
-docker compose up -d          # mongo + redis
+docker compose up -d          # mongo + redis, or run them locally:
+                              #   brew services start redis
+                              #   (and point MONGO_URI at Atlas)
 cp .env.example .env          # then fill in JWT_SECRET
 npm install
 npm run dev --workspace=@tgc/api
