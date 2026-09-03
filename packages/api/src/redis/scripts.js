@@ -40,6 +40,29 @@ export function parseKeyCount(source, name) {
   return Number(match[1]);
 }
 
+/**
+ * A script's filename becomes a method on the Redis client, so a file
+ * named `ping.lua` does not add a command - it *replaces* `redis.ping()`
+ * with itself. The client then calls the script wherever it meant to
+ * call the real command, with the wrong arity, and fails somewhere
+ * unrelated.
+ *
+ * This is not hypothetical: the first script in this directory was
+ * called ping.lua, and it broke the Redis health check, which reported
+ * the store as down while it was in fact fine. Throwing at load is the
+ * only way this stays a boot-time error rather than a mystery at
+ * runtime.
+ */
+export function assertNoCollision(redis, name) {
+  if (typeof redis[name] === 'function') {
+    throw new Error(
+      `lua script "${name}" would shadow the existing redis client method ` +
+        `"${name}". Rename the file - a script's name becomes a client method, ` +
+        `so it silently replaces the real command.`,
+    );
+  }
+}
+
 export async function loadScripts(redis, dir = LUA_DIR) {
   const files = (await readdir(dir)).filter((f) => f.endsWith('.lua')).sort();
   const loaded = [];
@@ -47,6 +70,7 @@ export async function loadScripts(redis, dir = LUA_DIR) {
   for (const file of files) {
     const name = basename(file, '.lua');
     const lua = await readFile(join(dir, file), 'utf8');
+    assertNoCollision(redis, name);
     redis.defineCommand(name, { numberOfKeys: parseKeyCount(lua, name), lua });
     loaded.push(name);
   }

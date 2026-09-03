@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-import { parseKeyCount } from '../../packages/api/src/redis/scripts.js';
+import { parseKeyCount, assertNoCollision } from '../../packages/api/src/redis/scripts.js';
 
 const LUA_DIR = join(process.cwd(), 'packages/api/src/lua');
 
@@ -30,6 +30,35 @@ describe('lua key-count directive', () => {
       const highest = used.length > 0 ? Math.max(...used) : 0;
 
       expect(declared, `${file} declares ${declared} keys but uses KEYS[${highest}]`).toBe(highest);
+    }
+  });
+});
+
+describe('client method collisions', () => {
+  // A script's filename becomes a method on the Redis client, so a file
+  // named ping.lua replaces redis.ping() with itself. That is exactly how
+  // the Phase 1 health check came to report a healthy Redis as down.
+  const fakeClient = { ping: () => {}, get: () => {}, eval: () => {} };
+
+  it('refuses a script that would shadow a real command', () => {
+    expect(() => assertNoCollision(fakeClient, 'ping')).toThrow(/would shadow/);
+    expect(() => assertNoCollision(fakeClient, 'get')).toThrow(/would shadow/);
+  });
+
+  it('allows a name that shadows nothing', () => {
+    expect(() => assertNoCollision(fakeClient, 'trade')).not.toThrow();
+    expect(() => assertNoCollision(fakeClient, 'smoketest')).not.toThrow();
+  });
+
+  it('no shipped script name collides with an ioredis client method', async () => {
+    const { default: Redis } = await import('ioredis');
+    const files = (await readdir(LUA_DIR)).filter((f) => f.endsWith('.lua'));
+
+    for (const file of files) {
+      const name = basename(file, '.lua');
+      expect(typeof Redis.prototype[name], `${file} would shadow redis.${name}()`).not.toBe(
+        'function',
+      );
     }
   });
 });
