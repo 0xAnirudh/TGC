@@ -26,7 +26,7 @@ deliberately deferred to later versions, and
 | Phase | | |
 |---|---|---|
 | 0 | Economy simulation | done — `v0.1-simulation` |
-| 1 | Project scaffold | |
+| 1 | Project scaffold | done |
 | 2 | Auth and users | |
 | 3 | Goods and quotes | |
 | 4 | Trading, sequential | |
@@ -55,9 +55,25 @@ docs/              implementation plan, architecture decision log
 ## Running
 
 ```bash
+docker compose up -d          # mongo + redis
+cp .env.example .env          # then fill in JWT_SECRET
 npm install
+npm run dev --workspace=@tgc/api
+
+curl localhost:4000/health
+```
+
+`GET /health` is readiness: it checks both stores and answers 503 while
+either is down, naming which one. `GET /health/live` is liveness and
+never touches a store.
+
+Other commands:
+
+```bash
 npm run sim      # run the economy simulation
 npm test         # run the test suite
+npm run lint     # eslint
+npm run format   # prettier
 ```
 
 The simulation takes flags: `npm run sim -- --trades=50000 --seed=7

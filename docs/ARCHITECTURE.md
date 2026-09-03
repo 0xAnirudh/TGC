@@ -124,6 +124,82 @@ floor is the bootstrap path.
 
 ---
 
+## ADR-006 — The two stores have different failure postures
+
+**Phase 1. Status: accepted.**
+
+A Mongo outage is survivable; a Redis outage is an outage. The Mongo
+client retries forever and the API keeps serving. The Redis client also
+reconnects forever, but requests that need it fail loudly meanwhile.
+
+**Why they differ:** Redis is the hot path, not a cache. It holds live
+supply, live base prices, user cash, the ledger head, the leaderboard,
+and the rate limit buckets. Mongo, from Phase 6, is a durable projection
+of a Redis stream - losing it stops the ledger being written down, not
+trades being executed.
+
+**Alternative considered: fall back to Mongo when Redis is unavailable.**
+Rejected. The rebuild path exists, but it replays the entire trade ledger
+to reconstruct state. That is a recovery tool measured in minutes, not a
+fallback a request can take. Serving a quote from a partially
+reconstructed market would be worse than refusing to serve one.
+
+**Consequence:** readiness returns 503 when either store is down, so a
+load balancer drains the instance. Liveness deliberately does not check
+either, so a shared store outage cannot trigger a restart loop across
+every instance simultaneously.
+
+---
+
+## ADR-007 — Bind the port before connecting to the stores
+
+**Phase 1. Status: accepted.**
+
+`server.js` calls `listen()` first and connects to Mongo and Redis
+afterwards, in the background.
+
+**Alternative considered: connect, then listen.** This is the more
+obvious ordering and it is worse. Because the Mongo client retries
+indefinitely, a process that cannot reach Mongo would never finish
+connecting, never bind, and therefore never answer a health check. The
+orchestrator sees a container that died on boot; the operator gets a
+restart loop and no signal about which store is actually missing.
+
+**Consequence:** `/health` is answerable from the first moment and names
+the missing store. Readiness still returns 503 until both are connected,
+so nothing reaches the instance before it can serve.
+
+---
+
+## ADR-008 — Lua scripts declare their own key count
+
+**Phase 1. Status: accepted.**
+
+Every `.lua` file starts with a directive:
+
+```
+-- keys: 2
+```
+
+The loader reads it and passes it to ioredis `defineCommand`.
+
+**Why it is in the file rather than the loader:** Redis Cluster routes a
+command by its declared keys. A script that under-declares works
+perfectly on a single node and breaks the moment the deployment grows -
+a failure mode that does not appear in any local test. Keeping the
+declaration in the same file as the `KEYS[]` uses it describes stops the
+two drifting apart, and a test asserts every shipped script's
+declaration matches its highest `KEYS[n]`.
+
+**Alternative considered: hand-rolled EVALSHA with a NOSCRIPT retry.**
+Rejected in favour of `defineCommand`, which already loads the script,
+caches the SHA, calls EVALSHA, and falls back to EVAL and reloads on
+NOSCRIPT - which is what happens after a Redis restart or a `SCRIPT
+FLUSH`. Reimplementing that would put a hand-written retry in the one
+place where getting it wrong means a trade silently fails.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:
