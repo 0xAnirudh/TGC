@@ -94,7 +94,9 @@ function run() {
       if (qty > 0 && economy.sell(playerId, good.id, qty).ok) executed += 1;
     } else {
       const want = rng.int(1, 400);
-      const qty = reckless ? want + rng.int(1, 50_000) : affordableQty(economy, playerId, good, want);
+      const qty = reckless
+        ? want + rng.int(1, 50_000)
+        : affordableQty(economy, playerId, good, want);
       if (qty > 0 && economy.buy(playerId, good.id, qty).ok) executed += 1;
     }
 
@@ -131,7 +133,7 @@ function roundTripCheck(economy) {
       qty,
       cost: notes(cost),
       'sold back for': notes(back),
-      'net': notes(back - cost),
+      net: notes(back - cost),
       lossy: back < cost ? 'yes' : 'NO — BROKEN',
     });
   }
@@ -172,7 +174,7 @@ function report(economy, history, startPrice, executed) {
           supply: notes(g.supply),
           open: startPrice[id].toFixed(2),
           close: now.toFixed(2),
-          'change': `${(((now - startPrice[id]) / startPrice[id]) * 100).toFixed(1)}%`,
+          change: `${(((now - startPrice[id]) / startPrice[id]) * 100).toFixed(1)}%`,
           chart: sparkline(series),
         };
       }),
@@ -202,7 +204,10 @@ function report(economy, history, startPrice, executed) {
   console.log(
     table([
       { term: 'reserve, accumulated', notes: notes(economy.reserve) },
-      { term: 'reserve, from curve integral', notes: notes(Math.round(economy.reserveFromCurve())) },
+      {
+        term: 'reserve, from curve integral',
+        notes: notes(Math.round(economy.reserveFromCurve())),
+      },
       { term: 'dust (must be >= 0)', notes: notes(Math.round(dust)) },
       { term: 'dust per executed trade', notes: (dust / Math.max(1, executed)).toFixed(4) },
     ]),

@@ -70,8 +70,7 @@ function integral(basePrice, supply, k, n) {
 export function buyCost(basePrice, supply, qty, k, n) {
   assertCurve(basePrice, supply, k, n);
   assertQty(qty);
-  const raw =
-    integral(basePrice, supply + qty, k, n) - integral(basePrice, supply, k, n);
+  const raw = integral(basePrice, supply + qty, k, n) - integral(basePrice, supply, k, n);
   return Math.ceil(raw);
 }
 
@@ -89,8 +88,7 @@ export function grossSellValue(basePrice, supply, qty, k, n) {
   if (qty > supply) {
     throw new RangeError(`cannot sell ${qty} units into a supply of ${supply}`);
   }
-  const raw =
-    integral(basePrice, supply, k, n) - integral(basePrice, supply - qty, k, n);
+  const raw = integral(basePrice, supply, k, n) - integral(basePrice, supply - qty, k, n);
   return Math.floor(raw);
 }
 

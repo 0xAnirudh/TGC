@@ -1,11 +1,4 @@
-import {
-  buyCost,
-  sellBreakdown,
-  price,
-  reserveAt,
-  maxTradeQty,
-  STARTING_GRANT,
-} from '@tgc/shared';
+import { buyCost, sellBreakdown, price, reserveAt, maxTradeQty, STARTING_GRANT } from '@tgc/shared';
 
 /**
  * An in-memory model of the whole economy.
@@ -125,13 +118,7 @@ export class Economy {
       return { ok: false, reason: 'trade_cap' };
     }
 
-    const { gross, spread, net } = sellBreakdown(
-      good.basePrice,
-      good.supply,
-      qty,
-      good.k,
-      good.n,
-    );
+    const { gross, spread, net } = sellBreakdown(good.basePrice, good.supply, qty, good.k, good.n);
 
     this.reserve -= gross;
     player.cash += net;
