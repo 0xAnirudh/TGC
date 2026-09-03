@@ -1,0 +1,56 @@
+import { readdir, readFile } from 'node:fs/promises';
+import { dirname, join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { log } from '../log.js';
+
+const LUA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'lua');
+
+/**
+ * Lua script loader.
+ *
+ * Every script declares how many of its arguments are keys on its first
+ * line:
+ *
+ *     -- keys: 2
+ *
+ * That matters more than it looks. Redis Cluster routes a command by its
+ * declared keys, so a script that lies about its key count works fine on
+ * a single node and breaks the moment the deployment grows. Declaring it
+ * in the file, next to the KEYS[] uses it describes, keeps the two from
+ * drifting apart.
+ *
+ * Loading goes through ioredis `defineCommand`, which loads the script,
+ * caches its SHA, calls EVALSHA, and transparently falls back to EVAL
+ * and reloads if Redis answers NOSCRIPT - which happens after a restart
+ * or a SCRIPT FLUSH. Hand-rolling that retry would be reimplementing a
+ * solved problem in the one place where getting it wrong means a trade
+ * fails.
+ */
+
+const KEYS_DIRECTIVE = /^\s*--\s*keys:\s*(\d+)\s*$/m;
+
+export function parseKeyCount(source, name) {
+  const match = source.match(KEYS_DIRECTIVE);
+  if (!match) {
+    throw new Error(
+      `lua script "${name}" is missing its key-count directive. ` +
+        `Add a line like "-- keys: 1" declaring how many arguments are keys.`,
+    );
+  }
+  return Number(match[1]);
+}
+
+export async function loadScripts(redis, dir = LUA_DIR) {
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.lua')).sort();
+  const loaded = [];
+
+  for (const file of files) {
+    const name = basename(file, '.lua');
+    const lua = await readFile(join(dir, file), 'utf8');
+    redis.defineCommand(name, { numberOfKeys: parseKeyCount(lua, name), lua });
+    loaded.push(name);
+  }
+
+  log.info('lua scripts loaded', { count: loaded.length, scripts: loaded });
+  return loaded;
+}
