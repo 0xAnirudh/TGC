@@ -1,27 +1,44 @@
+import 'dotenv/config';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * Point the test run at isolated stores.
+ *
+ * Integration tests drop collections and flush keys, so they must never
+ * be able to reach the development data. Two separate guards:
+ *
+ *   - a different Mongo database name (tgc_test, never tgc)
+ *   - a different Redis logical database (15, never 0)
+ *
+ * Both are forced here rather than read from .env, so a developer whose
+ * .env points at production cannot accidentally run the suite against
+ * it. The connection *targets* come from .env because there is no local
+ * Mongo - only the database name is overridden.
+ */
+const TEST_REDIS_DB = 15;
+
+function testRedisUrl(url = 'redis://localhost:6379') {
+  const parsed = new URL(url);
+  parsed.pathname = `/${TEST_REDIS_DB}`;
+  return parsed.toString();
+}
 
 export default defineConfig({
   test: {
     include: ['tests/**/*.test.js'],
+    // Integration tests share one Mongo database and one Redis database,
+    // so files must not run concurrently against each other.
+    fileParallelism: false,
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
 
-    /**
-     * Environment for the test process.
-     *
-     * config.js validates the environment at import time and exits if it
-     * is wrong, which is the behaviour we want from a real process and
-     * exactly the wrong behaviour inside a test runner. Supplying a valid
-     * environment here means importing any API module in a test is safe.
-     *
-     * These point at the local docker-compose stores and a throwaway
-     * database name. Integration tests from Phase 2 onwards drop and
-     * recreate MONGO_DB_NAME, so it must never be the dev database.
-     */
     env: {
       NODE_ENV: 'test',
-      MONGO_URI: 'mongodb://localhost:27017',
+      MONGO_URI: process.env.MONGO_URI ?? 'mongodb://localhost:27017',
       MONGO_DB_NAME: 'tgc_test',
-      REDIS_URL: 'redis://localhost:6379',
+      REDIS_URL: testRedisUrl(process.env.REDIS_URL),
       JWT_SECRET: 'test-only-secret-not-used-in-any-real-deployment',
+      JWT_TTL: '7d',
       LOG_LEVEL: 'error',
     },
   },
