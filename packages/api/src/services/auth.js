@@ -8,6 +8,21 @@ import { getRedis } from '../redis/client.js';
 import { userCash, ECON_GRANTED } from '../redis/keys.js';
 import { STARTING_GRANT } from '@tgc/shared';
 
+/**
+ * A hash of nothing in particular, compared against when a login names
+ * an account that does not exist.
+ *
+ * Without it, a missing username returns in under a millisecond while a
+ * real one takes as long as bcrypt does, and that difference is a
+ * reliable oracle for enumerating which accounts exist. Doing the work
+ * anyway makes both paths cost the same.
+ */
+let decoyHash = null;
+async function getDecoyHash() {
+  decoyHash ??= await bcrypt.hash('decoy-password-never-matches', config.BCRYPT_ROUNDS);
+  return decoyHash;
+}
+
 export function issueToken(user) {
   return jwt.sign({ sub: user._id.toString(), username: user.username }, config.JWT_SECRET, {
     expiresIn: config.JWT_TTL,
@@ -65,6 +80,23 @@ export async function register({ username, password }) {
       userId: user._id.toString(),
       err: err.message,
     });
+  }
+
+  return { user, token: issueToken(user) };
+}
+
+export async function login({ username, password }) {
+  const user = await User.findOne({ usernameLower: username.toLowerCase() });
+
+  // Compare regardless of whether the account exists, so both paths take
+  // the same time. The result of the decoy comparison is discarded.
+  const hash = user ? user.passwordHash : await getDecoyHash();
+  const matches = await bcrypt.compare(password, hash);
+
+  if (!user || !matches) {
+    // One message for both cases. Saying "no such user" versus "wrong
+    // password" hands an attacker a free account-enumeration oracle.
+    throw ApiError.unauthorized('invalid_credentials', 'Username or password is incorrect');
   }
 
   return { user, token: issueToken(user) };

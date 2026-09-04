@@ -28,3 +28,11 @@ const username = z
   .regex(/^[a-zA-Z0-9_]+$/, 'Username may contain only letters, numbers and underscores');
 
 export const registerSchema = z.object({ username, password });
+
+// Deliberately not the registration schema. Tightening the username
+// rules later must not lock existing accounts out of logging in, so
+// login accepts whatever is stored and lets the lookup fail.
+export const loginSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
+});
