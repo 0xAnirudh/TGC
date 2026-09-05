@@ -213,6 +213,90 @@ place where getting it wrong means a trade silently fails.
 
 ---
 
+## ADR-009 — Uniqueness is decided by the index, not by a prior check
+
+**Phase 2. Status: accepted.**
+
+Registration inserts and catches the duplicate-key error. It does not
+query for availability first.
+
+**Why:** checking then inserting is a race with no winner. Two
+simultaneous registrations both query, both see the name free, and both
+proceed. The unique index is the only thing in the system that actually
+decides, so the duplicate-key error is the real check and handling it is
+not error handling - it is the control flow.
+
+**Consequence:** the same reasoning applies to every uniqueness
+constraint added later. Where correctness depends on it, the index
+decides.
+
+---
+
+## ADR-010 — Passwords over 72 bytes are rejected, not truncated
+
+**Phase 2. Status: accepted.**
+
+bcrypt hashes at most the first 72 bytes of its input and silently
+ignores the rest.
+
+**Alternative considered: accept and let bcrypt truncate.** Rejected.
+Two different passphrases sharing a 72-byte prefix would hash
+identically, so a user who chose a long passphrase believing it stronger
+would be wrong, and nothing would tell them. Silently weakening a
+credential is worse than refusing it.
+
+**Alternative considered: pre-hash with SHA-256, then bcrypt the digest.**
+This is the usual way to lift the limit and it works, but it adds a
+construction that has to be explained and kept consistent forever for a
+limit no realistic password approaches. Rejected as unnecessary here.
+
+**Detail that matters:** the check counts *bytes*, not characters. A
+passphrase with any non-ASCII character - an emoji is 4 bytes - reaches
+72 bytes long before 72 characters, so a character-count check would
+still silently truncate.
+
+---
+
+## ADR-011 — Failed logins are indistinguishable from each other
+
+**Phase 2. Status: accepted.**
+
+An unknown username and a wrong password return the same status, the
+same error code, and the same message. When the username does not exist,
+the password is still compared against a decoy hash.
+
+**Why both halves are needed:** returning the same body is not enough on
+its own. Without the decoy comparison, a missing account returns in
+under a millisecond while a real one takes as long as bcrypt does, and
+that timing gap is a reliable oracle for enumerating accounts. The body
+closes one channel; the decoy closes the other.
+
+**Consequence:** login is deliberately no faster for a nonexistent user.
+That is the point, not an inefficiency to optimise away later.
+
+---
+
+## ADR-012 — `authenticate` does not load the user
+
+**Phase 2. Status: accepted.**
+
+The middleware verifies the token and attaches its claims. Routes that
+need the user document ask for it explicitly with `requireUser`.
+
+**Why:** trading is the hot path and needs nothing but the user id.
+Loading the document on every authenticated request would put a Mongo
+read in front of an operation otherwise served entirely from Redis, for
+data most routes discard.
+
+**Trade-off accepted:** nothing checks whether the account still exists,
+so a token remains valid until it expires even if the user is deleted.
+With a 7 day TTL and no deletion flow in v1, this is acceptable. If it
+stops being - a ban mechanism, say - the fix is a revocation set in
+Redis checked on the same round trip the request already makes, not a
+Mongo read.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:

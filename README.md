@@ -27,7 +27,7 @@ deliberately deferred to later versions, and
 |---|---|---|
 | 0 | Economy simulation | done — `v0.1-simulation` |
 | 1 | Project scaffold | done — verified against Atlas + Redis |
-| 2 | Auth and users | |
+| 2 | Auth and users | done |
 | 3 | Goods and quotes | |
 | 4 | Trading, sequential | |
 | 5 | Atomicity (Redis Lua) | |
