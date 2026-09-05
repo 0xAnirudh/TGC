@@ -40,6 +40,13 @@ export default defineConfig({
       JWT_SECRET: 'test-only-secret-not-used-in-any-real-deployment',
       JWT_TTL: '7d',
       LOG_LEVEL: 'error',
+
+      // bcrypt is deliberately slow. At the production factor of 12 a
+      // suite that registers a few dozen accounts spends most of its
+      // runtime waiting on a function whose whole purpose is to be
+      // expensive. 4 exercises the identical code path for a fraction of
+      // the cost; production refuses anything under 10.
+      BCRYPT_ROUNDS: '4',
     },
   },
 });

@@ -1,6 +1,7 @@
 import express from 'express';
 import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
+import { meRouter } from './routes/me.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -19,6 +20,7 @@ export function createApp() {
 
   app.use('/health', healthRouter);
   app.use('/auth', authRouter);
+  app.use('/me', meRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });
