@@ -4,6 +4,7 @@ import { log } from './log.js';
 import { connectMongo, disconnectMongo } from './db/mongo.js';
 import { connectRedis, disconnectRedis, getRedis } from './redis/client.js';
 import { loadScripts } from './redis/scripts.js';
+import { warmMarketState } from './services/market.js';
 
 const app = createApp();
 
@@ -31,6 +32,10 @@ async function connectStores() {
       .then(() => loadScripts(getRedis()))
       .catch((err) => log.error('redis setup failed', { err: err.message })),
   ]);
+
+  // Warming needs both stores, so it waits for them. It only fills gaps
+  // - see warmMarketState - so running it on every boot is safe.
+  await warmMarketState().catch((err) => log.error('market warm failed', { err: err.message }));
 }
 
 connectStores();

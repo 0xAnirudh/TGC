@@ -1,5 +1,22 @@
-import 'dotenv/config';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { z } from 'zod';
+
+/**
+ * Load .env from the repository root, not from the current directory.
+ *
+ * There is one .env for the whole monorepo, but the working directory
+ * depends on how a process was started: `npm run dev --workspace=@tgc/api`
+ * runs in packages/api, the seed script the same, vitest at the root.
+ * Plain `dotenv/config` reads ./.env relative to cwd, so two of those
+ * three find nothing and the process exits complaining that MONGO_URI is
+ * missing when it is sitting right there.
+ *
+ * Resolving from this file's own location makes it cwd-independent.
+ */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+dotenv.config({ path: join(REPO_ROOT, '.env'), quiet: true });
 
 /**
  * Environment configuration, validated once at boot.
