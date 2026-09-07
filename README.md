@@ -23,12 +23,16 @@ build plan, the requirements analysis, and the record of what was
 deliberately deferred to later versions, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the decision log.
 
+**New here?** [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) explains what
+the system does in plain language, for someone who knows MERN but has not
+used Redis for more than caching.
+
 | Phase | | |
 |---|---|---|
 | 0 | Economy simulation | done — `v0.1-simulation` |
 | 1 | Project scaffold | done — verified against Atlas + Redis |
 | 2 | Auth and users | done |
-| 3 | Goods and quotes | |
+| 3 | Goods and quotes | done |
 | 4 | Trading, sequential | |
 | 5 | Atomicity (Redis Lua) | |
 | 6 | Durability (stream, relay, rebuild) | |
