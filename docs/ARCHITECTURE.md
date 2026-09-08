@@ -297,6 +297,52 @@ Mongo read.
 
 ---
 
+## ADR-013 — The sequential trade path ships with a known race
+
+**Phase 4. Status: accepted, and deliberately temporary. Superseded by
+ADR-014 in Phase 5.**
+
+`services/trading.js` reads supply, computes a price, checks the
+balance, and writes the result back. Between the read and the write
+there is a gap, and another request can read the same supply inside it.
+
+**This is not hypothetical. It is measured.** Eight concurrent buys of
+100 units each, against a good at supply 10,000:
+
+```
+trades accepted by the API : 8 of 8
+correct final supply       : 10,800
+actual final supply        : 10,500
+units created from nothing : 300
+```
+
+Every one of the eight players was charged. Every request returned 201.
+Three hundred units entered existence with no corresponding payment, and
+nothing anywhere raised an error. The same gap exists on the cash check:
+two concurrent buys can both read a balance of 500, both decide 400 is
+affordable, and both spend it, leaving the account at -300.
+
+**Why ship it at all.** The fix is a Redis Lua script, and a Lua script
+is considerably harder to read than the code it replaces. Writing the
+obvious version first means Phase 5 arrives as a targeted repair to a
+problem that has been named, reproduced and measured - rather than as
+complexity introduced up front on the assurance that it will be needed.
+
+The commit history is part of the argument this project makes. It should
+show the race being identified before it was fixed, not a Lua script
+appearing fully formed with a comment claiming it was necessary.
+
+**How it gets fixed:** every step above - read supply, price it, check
+the balance, mutate supply, mutate cash - moves inside one Lua script.
+Redis runs a script start to finish with nothing interleaved, so the gap
+the race lives in stops existing. Phase 5.
+
+**A test asserts the bug**, in `tests/integration/trading.test.js`. In
+Phase 5 that test is rewritten to assert the fix, and the diff between
+the two versions is the clearest statement of what the phase achieved.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:

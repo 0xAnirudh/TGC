@@ -33,7 +33,7 @@ used Redis for more than caching.
 | 1 | Project scaffold | done — verified against Atlas + Redis |
 | 2 | Auth and users | done |
 | 3 | Goods and quotes | done |
-| 4 | Trading, sequential | |
+| 4 | Trading, sequential | done |
 | 5 | Atomicity (Redis Lua) | |
 | 6 | Durability (stream, relay, rebuild) | |
 | 7 | Rate limiting | |

@@ -151,6 +151,9 @@ GET  /me                your account         (needs token)
 GET  /goods             list the market
 GET  /goods/:id         one good in detail
 GET  /goods/:id/quote   price a hypothetical trade
+POST /trades            buy or sell          (needs token)
+GET  /trades            your trade history   (needs token)
+GET  /portfolio         cash, holdings, P/L  (needs token)
 GET  /health            are both databases up?
 ```
 
@@ -158,8 +161,12 @@ GET  /health            are both databases up?
 
 ## 6. What is still coming, and which part is the interesting one
 
-- **Phase 4** - trading, written the obvious way, with the race condition
-  from section 3 left in on purpose and documented.
+- **Phase 4** - *done.* Trading, written the obvious way, with the race
+  condition from section 3 left in on purpose. It is not a theoretical
+  worry: eight simultaneous buys of 100 units each were accepted, all
+  eight players were charged, and supply moved by 500 instead of 800.
+  Three hundred units appeared from nowhere and every request returned
+  success. See ADR-013.
 - **Phase 5** - fixing it. The check-and-update becomes one Lua script
   that Redis runs start-to-finish with nothing else interleaved. About
   40 lines. This is the single most valuable thing in the project.
