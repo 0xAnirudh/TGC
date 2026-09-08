@@ -3,6 +3,8 @@ import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { meRouter } from './routes/me.js';
 import { goodsRouter } from './routes/goods.js';
+import { tradesRouter } from './routes/trades.js';
+import { portfolioRouter } from './routes/portfolio.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -23,6 +25,8 @@ export function createApp() {
   app.use('/auth', authRouter);
   app.use('/me', meRouter);
   app.use('/goods', goodsRouter);
+  app.use('/trades', tradesRouter);
+  app.use('/portfolio', portfolioRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });
