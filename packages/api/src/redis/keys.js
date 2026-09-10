@@ -14,8 +14,19 @@ export const goodSupply = (goodId) => `mkt:${goodId}:supply`;
 /** Live base price of a good. Moved by the drift job from Phase 8. */
 export const goodBasePrice = (goodId) => `mkt:${goodId}:basePrice`;
 
-/** A player's cash. Becomes the source of truth in Phase 5. */
+/** A player's cash. The source of truth from Phase 5 onward. */
 export const userCash = (userId) => `user:${userId}:cash`;
+
+/**
+ * A player's holdings, as a hash of goodId -> quantity.
+ *
+ * These live in Redis for the same reason cash does: a sell has to check
+ * and decrement them inside the same atomic block that moves supply.
+ * Checking holdings in Mongo and then mutating Redis would leave exactly
+ * the gap Phase 5 exists to close - two concurrent sells could both pass
+ * the check and both succeed.
+ */
+export const userHoldings = (userId) => `user:${userId}:holdings`;
 
 /**
  * Running total of every Note ever granted.

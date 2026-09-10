@@ -14,13 +14,19 @@ export const tradesRouter = Router();
  * from supply at the moment of execution. A client-supplied price would
  * be the whole exploit - submit a stale low price, get filled at it.
  *
- * Phase 5 adds maxSlippage so a client can refuse a price that moved too
- * far while the request was in flight. That is the correct way to give a
- * client price control: a bound it will not cross, not a number it names.
+ * What it sends instead is slippageBps - a bound it refuses to cross.
+ * That is the correct way to give a client price control: the curve
+ * still decides the price, and the client only gets to decline.
  */
 tradesRouter.post('/', authenticate, validateBody(tradeBodySchema), async (req, res) => {
-  const { goodId, side, qty } = req.body;
-  const result = await executeTrade({ userId: req.auth.userId, goodId, side, qty });
+  const { goodId, side, qty, slippageBps } = req.body;
+  const result = await executeTrade({
+    userId: req.auth.userId,
+    goodId,
+    side,
+    qty,
+    slippageBps,
+  });
 
   res.status(201).json({
     trade: result.trade.toPublic(),

@@ -7,6 +7,8 @@ import {
   ECON_RESERVE,
   ECON_BURNED,
   goodSupply,
+  userCash,
+  userHoldings,
 } from '../../packages/api/src/redis/keys.js';
 import { User } from '../../packages/api/src/models/User.js';
 import { buyCost, sellBreakdown, STARTING_GRANT } from '@tgc/shared';
@@ -34,8 +36,12 @@ const trade = (token, body) =>
 async function assertMoneySupply() {
   const redis = getRedis();
   const [granted, reserve, burned] = await redis.mget(ECON_GRANTED, ECON_RESERVE, ECON_BURNED);
+  // Cash is read from Redis, which is the live truth from Phase 5.
+  // Reading Mongo here would be checking the projection, not the books.
   const users = await User.find().lean();
-  const cash = users.reduce((sum, u) => sum + u.cash, 0);
+  const cashKeys = users.map((u) => userCash(u._id.toString()));
+  const cashValues = cashKeys.length > 0 ? await redis.mget(...cashKeys) : [];
+  const cash = cashValues.reduce((sum, v) => sum + Number(v ?? 0), 0);
 
   expect(cash + Number(reserve ?? 0) + Number(burned ?? 0)).toBe(Number(granted ?? 0));
 }
@@ -211,31 +217,112 @@ describe('GET /portfolio', () => {
   });
 });
 
-describe('the known race condition', () => {
-  it('loses updates when two buys land at once (fixed in Phase 5)', async () => {
-    // This test asserts the bug. It is the measurement that justifies
-    // Phase 5, and in Phase 5 it is rewritten to assert the fix.
+describe('concurrency', () => {
+  it('two simultaneous buys both land', async () => {
+    // In Phase 4 this test asserted the bug: both requests read the same
+    // supply and one purchase vanished. The whole of Phase 5 exists to
+    // turn this assertion around.
     const a = await makePlayer('racer_a');
     const b = await makePlayer('racer_b');
     const { id } = await makeGood();
     await setSupply(id, 10_000);
 
     await Promise.all([
-      trade(a.token, { goodId: id, side: 'buy', qty: 100 }),
-      trade(b.token, { goodId: id, side: 'buy', qty: 100 }),
+      trade(a.token, { goodId: id, side: 'buy', qty: 100, slippageBps: 500 }),
+      trade(b.token, { goodId: id, side: 'buy', qty: 100, slippageBps: 500 }),
     ]);
 
-    const supply = Number(await getRedis().get(goodSupply(id)));
+    expect(Number(await getRedis().get(goodSupply(id)))).toBe(10_200);
+    await assertMoneySupply();
+  });
 
-    // Correct would be 10_200. Sequential code often produces 10_100
-    // because both requests read 10_000 before either wrote. Either
-    // outcome is possible depending on timing, which is exactly what
-    // makes this a bug worth fixing rather than a reliable behaviour.
-    expect([10_100, 10_200]).toContain(supply);
-    if (supply === 10_100) {
-      // 200 units were sold, supply moved by 100. 100 units came from
-      // nowhere and no error was raised.
-      expect(supply).toBe(10_100);
+  it('holds exactly under 60 concurrent buys from 60 players', async () => {
+    const players = [];
+    for (let i = 0; i < 60; i += 1) {
+      players.push((await makePlayer(`swarm_${i}`)).token);
     }
+    const { id } = await makeGood({ basePrice: 20, k: 200_000, n: 1 });
+    await setSupply(id, 100_000);
+
+    const results = await Promise.all(
+      players.map((t) => trade(t, { goodId: id, side: 'buy', qty: 100, slippageBps: 2_000 })),
+    );
+    const accepted = results.filter((r) => r.status === 201).length;
+
+    // Supply must have moved by exactly 100 per accepted trade. Not
+    // approximately - exactly. Any drift means units were created or
+    // destroyed by interleaving.
+    expect(Number(await getRedis().get(goodSupply(id)))).toBe(100_000 + accepted * 100);
+    await assertMoneySupply();
+  });
+
+  it('never lets concurrent buys overdraw one account', async () => {
+    // The other half of the race: two buys both reading the same balance
+    // and both deciding they can afford it.
+    const { token, id: userId } = await makePlayer('spender');
+    const { id } = await makeGood({ basePrice: 900, k: 50_000, n: 1 });
+    await setSupply(id, 50_000);
+
+    // Each buy costs roughly a third of the starting grant, so a few of
+    // these must be refused. None may drive the balance negative.
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        trade(token, { goodId: id, side: 'buy', qty: 20, slippageBps: 3_000 }),
+      ),
+    );
+
+    const cash = Number(await getRedis().get(userCash(userId)));
+    expect(cash).toBeGreaterThanOrEqual(0);
+    await assertMoneySupply();
+  });
+
+  it('never lets concurrent sells dispose of more than is held', async () => {
+    const { token, id: userId } = await makePlayer('dumper');
+    const { id } = await makeGood({ basePrice: 20, k: 200_000, n: 1 });
+    await setSupply(id, 50_000);
+
+    await trade(token, { goodId: id, side: 'buy', qty: 100, slippageBps: 500 }).expect(201);
+
+    // Six simultaneous attempts to sell the same 100 units.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        trade(token, { goodId: id, side: 'sell', qty: 100, slippageBps: 3_000 }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === 201)).toHaveLength(1);
+    const held = await getRedis().hget(userHoldings(userId), id);
+    expect(Number(held ?? 0)).toBe(0);
+    await assertMoneySupply();
+  });
+});
+
+describe('slippage', () => {
+  it('refuses a trade whose price moved past the tolerance', async () => {
+    const { token } = await makePlayer('picky');
+    const other = await makePlayer('mover');
+    const { id } = await makeGood({ basePrice: 8, k: 4_000, n: 3 });
+    await setSupply(id, 4_000);
+
+    // A zero tolerance means "only at exactly the price I was quoted",
+    // which cannot survive a concurrent trade on a steep good.
+    const [, picky] = await Promise.all([
+      trade(other.token, { goodId: id, side: 'buy', qty: 400, slippageBps: 5_000 }),
+      trade(token, { goodId: id, side: 'buy', qty: 400, slippageBps: 0 }),
+    ]);
+
+    if (picky.status === 400) {
+      expect(picky.body.error).toBe('slippage_exceeded');
+      expect(picky.body.details.actual).toBeGreaterThan(picky.body.details.limit);
+    }
+    await assertMoneySupply();
+  });
+
+  it('rejects a tolerance wide enough to be meaningless', async () => {
+    const { token } = await makePlayer('reckless');
+    const { id } = await makeGood();
+    const res = await trade(token, { goodId: id, side: 'buy', qty: 10, slippageBps: 9_999 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('validation_failed');
   });
 });

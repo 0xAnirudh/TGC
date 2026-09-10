@@ -2,8 +2,7 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { log } from './log.js';
 import { connectMongo, disconnectMongo } from './db/mongo.js';
-import { connectRedis, disconnectRedis, getRedis } from './redis/client.js';
-import { loadScripts } from './redis/scripts.js';
+import { connectRedis, disconnectRedis } from './redis/client.js';
 import { warmMarketState } from './services/market.js';
 
 const app = createApp();
@@ -28,9 +27,7 @@ const server = app.listen(config.PORT, () => {
 async function connectStores() {
   await Promise.all([
     connectMongo().catch((err) => log.error('mongo gave up', { err: err.message })),
-    connectRedis()
-      .then(() => loadScripts(getRedis()))
-      .catch((err) => log.error('redis setup failed', { err: err.message })),
+    connectRedis().catch((err) => log.error('redis setup failed', { err: err.message })),
   ]);
 
   // Warming needs both stores, so it waits for them. It only fills gaps

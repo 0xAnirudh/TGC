@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { config } from '../config.js';
 import { log } from '../log.js';
 import { backoffDelay } from '../util/backoff.js';
+import { loadScripts } from './scripts.js';
 
 /**
  * Redis client.
@@ -43,11 +44,32 @@ export function getRedis() {
   return client;
 }
 
+/**
+ * Connect and register the Lua scripts.
+ *
+ * Loading happens here rather than in the server boot sequence because
+ * the API is not the only thing that connects: the test suite, the seed
+ * script, the relay worker and the job runner all do too, and every one
+ * of them needs the scripts defined. Leaving it in server.js meant
+ * `redis.trade is not a function` everywhere else.
+ */
 export async function connectRedis() {
   const redis = getRedis();
-  if (redis.status === 'ready') return redis;
+  if (redis.status === 'ready') {
+    if (!scriptsLoaded) await registerScripts(redis);
+    return redis;
+  }
   if (redis.status === 'wait' || redis.status === 'end') await redis.connect();
+  await registerScripts(redis);
   return redis;
+}
+
+let scriptsLoaded = false;
+
+async function registerScripts(redis) {
+  if (scriptsLoaded) return;
+  await loadScripts(redis);
+  scriptsLoaded = true;
 }
 
 export async function redisStatus() {
@@ -67,5 +89,6 @@ export async function disconnectRedis() {
   if (!client) return;
   await client.quit().catch(() => client.disconnect());
   client = null;
+  scriptsLoaded = false;
   log.info('redis disconnected');
 }
