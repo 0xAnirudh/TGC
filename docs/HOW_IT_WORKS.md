@@ -167,9 +167,7 @@ GET  /health            are both databases up?
   eight players were charged, and supply moved by 500 instead of 800.
   Three hundred units appeared from nowhere and every request returned
   success. See ADR-013.
-- **Phase 5** - fixing it. The check-and-update becomes one Lua script
-  that Redis runs start-to-finish with nothing else interleaved. About
-  40 lines. This is the single most valuable thing in the project.
+- **Phase 5** - *done.* See section 7.
 - **Phase 6** - making it survive a crash. Instead of writing to Redis
   and then to Mongo (where the second write can fail and leave them
   disagreeing), the trade is appended to a log inside Redis, and a small
@@ -180,5 +178,71 @@ GET  /health            are both databases up?
   frontend, load testing, deployment.
 
 If someone asks what is technically interesting about this project, the
-answer is sections 3 and 4 and Phases 5 and 6. The rest is competent
-CRUD.
+answer is sections 3, 4 and 7, plus Phase 6. The rest is competent CRUD.
+
+---
+
+## 7. How the race got fixed
+
+Recall the problem from section 3: two people buying at the same moment
+both read the same supply, and one purchase disappears.
+
+**The fix is not locking.** It is moving the whole operation inside
+Redis.
+
+Redis runs a Lua script from its first line to its last **without
+running anything else in between**. Not "with a lock held" - there is
+genuinely no moment during the script where another client's command can
+run. So if the read and the write both happen inside one script, there is
+no gap for a second request to slip into.
+
+`packages/api/src/lua/trade.lua` does all of this as one operation:
+
+```
+read supply and base price
+work out the cost from the curve
+is it within the caller's slippage limit?
+can they afford it / do they hold enough?
+change supply
+change their cash and holdings
+update the reserve and burn counters
+```
+
+That is why cash and holdings had to move into Redis too. A sell has to
+check "do you own 100 units?" and subtract them *in the same breath* as
+changing supply. If that check lived in MongoDB, the gap would be right
+back.
+
+**The same measurement, before and after:**
+
+| | Phase 4 | Phase 5 |
+|---|---|---|
+| concurrent buys | 8 | 500 |
+| all accepted | yes | yes |
+| units created from nothing | **300** | **0** |
+| Notes leaked | not checked | **0** |
+
+500 trades in 28ms. Roughly 17,700 a second.
+
+**What you send when you trade.** Not a price - a tolerance:
+
+```json
+POST /trades
+{ "goodId": "...", "side": "buy", "qty": 100, "slippageBps": 100 }
+```
+
+`slippageBps: 100` means 1%. If the price moved more than that between
+the server quoting your trade and actually running it, the trade is
+refused rather than filled at a worse price.
+
+You are never allowed to send a price. If you could, you could send a
+stale low one and be filled at it. The curve decides the price; you only
+get to say no.
+
+**One thing worth knowing about writing Lua.** The curve maths now exists
+twice - once in JavaScript for quotes, once in Lua for execution. If they
+ever disagree, a quote promises one price and the trade charges another.
+There is a test (`tests/invariant/lua-parity.test.js`) that runs both
+across 6,993 different inputs and demands identical answers. It found a
+real bug immediately: Lua prints large numbers in scientific notation and
+loses digits, so a cost of 353,041,482,706,872 came back 72 Notes short.

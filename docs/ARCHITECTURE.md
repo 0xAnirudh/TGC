@@ -343,6 +343,130 @@ the two versions is the clearest statement of what the phase achieved.
 
 ---
 
+## ADR-014 — Trade execution is one Lua script
+
+**Phase 5. Status: accepted. Supersedes ADR-013.**
+
+Everything that has to be indivisible - read supply, price the trade,
+check the slippage bound, check cash or holdings, mutate supply, mutate
+cash and holdings, move the reserve and burn counters - happens inside
+`packages/api/src/lua/trade.lua`. Redis executes a script from first line
+to last with no other command interleaved, so the read-then-write gap
+ADR-013 measured does not exist.
+
+**The before and after, same measurement both times:**
+
+| | Phase 4 (JavaScript) | Phase 5 (Lua) |
+|---|---|---|
+| concurrent buys | 8 | 500 |
+| accepted | 8 | 500 |
+| supply drift | **300 units created** | 0 |
+| holdings vs supply | not checked | 0 |
+| leaked Notes | not checked | 0 |
+| throughput | — | 17,719 trades/sec |
+
+**Alternatives considered.**
+
+*WATCH/MULTI/EXEC optimistic locking.* Redis supports it and it is
+correct. Rejected because under contention - which is exactly the hot
+good everyone is trading - it degrades into a retry loop, and the retry
+budget becomes a latency tail on the most active good in the game. Lua
+has no contention to lose to.
+
+*Mongo transactions.* Would move the hot path onto Atlas and give up the
+sub-millisecond read that NFR-1 depends on, to solve a problem Redis
+solves without a round trip.
+
+*A per-good mutex in Node.* Works for one process. The API is stateless
+and horizontally scaled by NFR-7, so a mutex inside one instance protects
+nothing once a second instance exists.
+
+**Consequence:** cash and holdings had to move into Redis. A sell must
+check holdings inside the same block that moves supply; checking them in
+Mongo first would rebuild the gap the script exists to close. Mongo keeps
+both as a durable projection.
+
+**What is still not atomic.** The Mongo write after the script can fail
+on its own, leaving Redis correct and Mongo behind. That is the dual
+write Phase 6 removes.
+
+---
+
+## ADR-015 — The client sends a slippage bound, never a price
+
+**Phase 5. Status: accepted.**
+
+`POST /trades` accepts `slippageBps`. The route prices the trade at
+current supply, widens it by the tolerance, and passes the script a hard
+limit it will not execute beyond.
+
+**Why not accept a price.** A client that names its own price can name a
+stale low one and be filled at it. The curve must decide the price; the
+client may only decline the result.
+
+**Why a tolerance rather than the quoted total.** Either works, and
+passing the quoted figure back would also be safe, since a client
+inflating it only widens its own acceptance. A tolerance is simply less
+to carry: no quote has to be echoed, and `curl` can place a trade without
+first fetching one.
+
+**What the bound actually protects.** Supply can move between the route
+pricing the trade and the script executing it. That window is small and
+real, and it is precisely where another player's trade lands. Zero
+tolerance is permitted and means "only at exactly the price I was
+quoted", which fails under any concurrent activity - correctly.
+
+The cap is 5000 bps. Past fifty percent a tolerance has stopped being a
+tolerance.
+
+---
+
+## FINDING-005 — Two implementations of one curve need a test between them
+
+**Phase 5.**
+
+The curve now exists twice: in JavaScript for quotes, portfolio
+valuation and the simulation, and in Lua for execution. If they ever
+disagree, a quote promises one price while the trade charges another -
+and worse, the Phase 6 rebuild replays the ledger through the JavaScript
+version and reconstructs a market that never existed.
+
+`tests/invariant/lua-parity.test.js` diffs them across 6,993 parameter
+combinations. It found a real defect on its first run: Lua's `tostring()`
+switches to scientific notation past about 1e14 and keeps only 14
+significant digits, so a cost of 353,041,482,706,872 came back as
+`3.5304148270687e+14` - short by 72 Notes. 36 combinations disagreed,
+every one above 1e14, every one a formatting loss rather than a
+difference in the arithmetic. `string.format('%.0f', x)` fixed all 36.
+
+Whether a good could realistically reach 1e14 is beside the point. The
+lesson is that the second implementation was wrong within an hour of
+existing, in a way no amount of reading it would have shown.
+
+---
+
+## FINDING-006 — Lua scope is downward only, and the tests nearly missed it
+
+**Phase 5.**
+
+`local function fmt` was declared partway down `trade.lua`, below the
+size-cap check that called it. Lua binds a `local function` from its
+definition downward only, so at the point of the call it did not exist
+and the script aborted with "attempted to access nonexistent global
+variable 'fmt'".
+
+Every happy-path test passed. The only path that touched the helper
+before its definition was a *rejection* path, which the success cases
+never reach - so the bug surfaced as a 500 on one oversized-trade test
+and nowhere else.
+
+Helpers are now defined immediately after the arguments are parsed,
+above every use. The wider point: in a script where the error paths and
+the success paths use different code, testing the rejections is not
+optional thoroughness.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:
