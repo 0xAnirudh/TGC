@@ -29,7 +29,11 @@ export default defineConfig({
     // Integration tests share one Mongo database and one Redis database,
     // so files must not run concurrently against each other.
     fileParallelism: false,
-    testTimeout: 20_000,
+    // Integration tests talk to Atlas over the network, so a test that
+    // places a few dozen trades spends most of its time in flight rather
+    // than computing. 60s is generous for a local suite and still catches
+    // a genuine hang.
+    testTimeout: 60_000,
     hookTimeout: 30_000,
 
     env: {
