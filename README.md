@@ -35,7 +35,7 @@ used Redis for more than caching.
 | 3 | Goods and quotes | done |
 | 4 | Trading, sequential | done |
 | 5 | Atomicity (Redis Lua) | done — `v0.5-atomic` |
-| 6 | Durability (stream, relay, rebuild) | |
+| 6 | Durability (stream, relay, rebuild) | done |
 | 7 | Rate limiting | |
 | 8 | Drift and price history | |
 | 9 | Real-time (WebSockets) | |

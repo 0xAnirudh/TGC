@@ -467,6 +467,112 @@ optional thoroughness.
 
 ---
 
+## ADR-016 — Mongo is a projection of a Redis stream
+
+**Phase 6. Status: accepted. Completes ADR-014.**
+
+`trade.lua` appends the trade to `stream:trades` inside the same atomic
+block that moves supply and cash. The API writes nothing to Mongo. A
+relay worker consumes the stream with a consumer group and projects
+entries into Mongo.
+
+**What this replaces.** ADR-014 left a second write: execute in Redis,
+then write the ledger row from JavaScript. Redis could succeed and Mongo
+fail, leaving the market moved and the ledger silent. Recovering from
+that means a compensating reversal, which is itself a write that can
+fail.
+
+**Why this is different from doing the dual write carefully.** There is
+no second write. The trade is durable the moment the script returns,
+because the script appended it. Mongo falling over stops the projection,
+not the trade - entries accumulate in the stream and land when it comes
+back. There is nothing to compensate because nothing can be half-done.
+
+**Trade-off accepted:** anything read from Mongo lags the live state by
+however long the relay takes. In practice that is milliseconds. It shows
+up in the API as a holding's cost basis not existing the instant a trade
+returns, which is why the portfolio tests drive the relay by hand.
+
+**Trade-off accepted:** Redis durability now bounds worst-case loss, as
+`appendfsync everysec` means up to a second of trades on an unclean
+shutdown. That is the documented cost of keeping the hot path in memory,
+and the rebuild path is what makes it survivable rather than fatal.
+
+---
+
+## ADR-017 — Blocking reads get their own connection
+
+**Phase 6. Status: accepted.**
+
+The relay's `XREADGROUP ... BLOCK` runs on a duplicated connection. The
+single-shot variant used by tests takes no `BLOCK` argument at all.
+
+**Why, learned expensively.** A blocking command monopolises its
+connection: the server stops answering anything else on that socket
+until the command returns. The first version blocked on the API's shared
+client, and a `BLOCK 1` - one millisecond - took sixty seconds, because
+the reply queued behind auto-pipelined traffic on a socket that had
+stopped answering. Every test that drove the relay timed out.
+
+**Consequence:** any future blocking command - `BLPOP`, `WAIT`, a
+blocking stream read anywhere else - needs the same treatment. Sharing
+the API client with a command that waits by design is never correct.
+
+---
+
+## FINDING-007 — Only what the ledger created can be rebuilt
+
+**Phase 6.**
+
+The rebuild starts every good at zero supply and derives the rest from
+the trades. It does not read `Market.supply` from Mongo, because
+trusting the cached copy would make the reconstruction circular.
+
+The first version of the rebuild test injected 60,000 units directly
+into Redis to set up a market, traded on top of that, and then failed
+because the rebuild produced 260 rather than 60,260. **The rebuild was
+right and the test was cheating.** No trade created those 60,000 units,
+so the ledger correctly does not contain them.
+
+This is a standing constraint, not a curiosity:
+
+- Supply may only ever change through something the ledger records.
+- Phase 11's issuance must therefore create a good at zero supply. An
+  initial allocation to the issuer would be supply with no ledger entry,
+  and the rebuild would silently erase it - which is a second, quieter
+  reason the issuer gets no free allocation, on top of the economic one
+  in Phase 11.
+- The same applies to any future admin tooling that wants to "just set"
+  a number.
+
+---
+
+## FINDING-008 — A driver option that no longer exists fails silently
+
+**Phase 6.**
+
+The projection detected redelivery using Mongoose's `rawResult` option
+on `findOneAndUpdate`, reading `lastErrorObject.updatedExisting`. That
+option was removed in Mongoose 9. It is not an error - it is ignored,
+the metadata comes back `null`, and `!null?.updatedExisting` evaluates
+to `true`.
+
+So every delivery looked like a first delivery. The ledger row was still
+deduplicated by its unique index, so the visible symptom was nothing at
+all - but `tradeCount` and `vol24h` would have been incremented again on
+every retry, which is precisely the double-counting the stream id exists
+to prevent.
+
+Replaced with a plain insert and a duplicate-key catch. The index
+decides, the same way it decides usernames (ADR-009), and no driver
+option has to keep existing for the logic to hold.
+
+The test now asserts the counters, not just the row count. Asserting
+that a duplicate produced one ledger row passed throughout; it was
+checking the half that was never broken.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:

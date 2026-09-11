@@ -168,17 +168,13 @@ GET  /health            are both databases up?
   Three hundred units appeared from nowhere and every request returned
   success. See ADR-013.
 - **Phase 5** - *done.* See section 7.
-- **Phase 6** - making it survive a crash. Instead of writing to Redis
-  and then to Mongo (where the second write can fail and leave them
-  disagreeing), the trade is appended to a log inside Redis, and a small
-  separate process copies entries from that log into Mongo. There is no
-  second write that can fail, so there is nothing to undo.
+- **Phase 6** - *done.* See section 8.
 - **Phases 7-15** - rate limiting, prices that drift on their own, live
   updates, a leaderboard, player-created goods, a daily newspaper, the
   frontend, load testing, deployment.
 
 If someone asks what is technically interesting about this project, the
-answer is sections 3, 4 and 7, plus Phase 6. The rest is competent CRUD.
+answer is sections 3, 4, 7 and 8. The rest is competent CRUD.
 
 ---
 
@@ -246,3 +242,81 @@ There is a test (`tests/invariant/lua-parity.test.js`) that runs both
 across 6,993 different inputs and demands identical answers. It found a
 real bug immediately: Lua prints large numbers in scientific notation and
 loses digits, so a cost of 353,041,482,706,872 came back 72 Notes short.
+
+---
+
+## 8. How a trade survives a crash
+
+Phase 5 made trades correct. This makes them durable.
+
+**The problem with writing to two places.** The obvious design is:
+execute the trade in Redis, then save it to MongoDB. But those are two
+separate writes, and the second one can fail. If it does, the market has
+moved and the ledger has no record of it. You cannot even undo the first
+one safely, because the undo is *also* a write that can fail.
+
+**The fix is to only ever write once.** Redis has a data type called a
+**stream** - an append-only log. The Lua script, in the same atomic block
+where it moves supply and cash, appends the trade to that log:
+
+```
+...change supply, cash, holdings...
+XADD stream:trades * userId ... goodId ... qty ... notional ...
+```
+
+So the trade is *already saved* by the time the script finishes. There is
+no second write to fail.
+
+A separate small program (`packages/relay`) then reads that log and
+copies entries into MongoDB. If Mongo is down, it just keeps failing and
+retrying, and entries pile up in the log until it comes back. Nothing is
+lost, and nothing needs undoing, because nothing was ever half-done.
+
+**MongoDB is now a copy, not a second original.** That is the whole
+point. Redis is the truth; Mongo is a durable write-down of it.
+
+**Why duplicates are harmless.** The relay might crash after saving to
+Mongo but before marking the entry as handled - so on restart it sees the
+entry again. `XADD` returns a unique id for each entry, and that id *is*
+the trade id, stored with a unique index. Saving the same entry twice
+writes the same row twice, which changes nothing.
+
+**The part worth showing someone.** Because every trade is in the log,
+the entire market can be rebuilt from scratch:
+
+```bash
+npm run rebuild --workspace=@tgc/api
+```
+
+It reads every trade in order and recomputes supply, cash and holdings
+from zero. Run against the real database:
+
+```
+before flush:   supply 500, granted 200,000, reserve 30,377
+FLUSHDB      →  0 keys left in redis
+after rebuild:  supply 500, granted 200,000, reserve 30,377
+```
+
+That is not just a backup story. It is a *proof*: if replaying the log
+reproduces the exact state the system had, the log really does contain
+everything that happened - nothing was missed, nothing was
+double-counted, and nothing other than a trade ever moved the market.
+
+**One consequence to remember.** The rebuild starts every good at zero
+and derives supply from trades. So anything that changes supply *must*
+go through the ledger. You cannot "just set" a supply number somewhere -
+the next rebuild would erase it.
+
+**Two bugs this phase, both worth knowing about:**
+
+*A blocking Redis command takes over its whole connection.* The relay
+waits for new entries with `XREADGROUP ... BLOCK`. Running that on the
+same connection the API uses made a **one millisecond** wait take
+**sixty seconds**, because the server stops answering anything else on
+that socket while it waits. Blocking commands need their own connection.
+
+*Mongoose 9 removed an option without erroring.* The relay used
+`rawResult: true` to check whether an entry had been seen before. That
+option no longer exists - it is silently ignored - so the check always
+said "new". Nothing looked broken, but the trade counters would have
+been inflated on every retry.
