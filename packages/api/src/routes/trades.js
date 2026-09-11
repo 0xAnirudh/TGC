@@ -29,7 +29,7 @@ tradesRouter.post('/', authenticate, validateBody(tradeBodySchema), async (req, 
   });
 
   res.status(201).json({
-    trade: result.trade.toPublic(),
+    trade: result.trade,
     cash: result.cash,
     supply: result.supply,
     priceAfter: result.priceAfter,

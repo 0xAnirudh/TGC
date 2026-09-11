@@ -14,6 +14,17 @@ import mongoose from 'mongoose';
  */
 const tradeSchema = new mongoose.Schema(
   {
+    /**
+     * The Redis stream entry id this row was projected from.
+     *
+     * Unique, and that uniqueness is the whole idempotency story. The
+     * relay delivers at least once - a crash between writing to Mongo
+     * and acknowledging the entry means it arrives again - so the write
+     * is an upsert on this field. Delivering the same entry twice writes
+     * the same row twice and changes nothing.
+     */
+    streamId: { type: String, required: true, unique: true, index: true },
+
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     goodId: { type: mongoose.Schema.Types.ObjectId, ref: 'Good', required: true, index: true },
 
@@ -46,7 +57,7 @@ tradeSchema.index({ userId: 1, createdAt: -1 });
 
 tradeSchema.methods.toPublic = function toPublic() {
   return {
-    id: this._id.toString(),
+    id: this.streamId,
     goodId: this.goodId.toString(),
     side: this.side,
     quantity: this.quantity,

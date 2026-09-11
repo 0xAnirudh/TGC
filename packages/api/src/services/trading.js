@@ -1,9 +1,6 @@
 import mongoose from 'mongoose';
 import { Good } from '../models/Good.js';
-import { Market } from '../models/Market.js';
-import { User } from '../models/User.js';
 import { Holding } from '../models/Holding.js';
-import { Trade } from '../models/Trade.js';
 import { getRedis } from '../redis/client.js';
 import {
   goodSupply,
@@ -12,10 +9,10 @@ import {
   userHoldings,
   ECON_RESERVE,
   ECON_BURNED,
+  STREAM_TRADES,
 } from '../redis/keys.js';
 import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded, readCash, readHoldings } from './accounts.js';
-import { log } from '../log.js';
 import {
   buyCost,
   sellBreakdown,
@@ -30,18 +27,18 @@ import {
 /**
  * Trade execution - ATOMIC VERSION.
  *
- * The check-and-mutate that used to live here now lives in
- * `lua/trade.lua`, which Redis runs start to finish with nothing
- * interleaved. What remains in JavaScript is everything that does *not*
- * need to be atomic:
+ * The check-and-mutate lives in `lua/trade.lua`, which Redis runs start
+ * to finish with nothing interleaved. Since Phase 6 that script also
+ * appends the trade to a Redis stream inside the same atomic block, so
+ * this module writes nothing to Mongo at all.
  *
- *   before  work out the slippage bound to hand the script
- *   after   write the outcome down in Mongo
+ * That is the point. There is no second write here that could fail and
+ * leave the market moved with the ledger silent. The stream *is* the
+ * ledger; `packages/relay` copies it into Mongo afterwards, and if Mongo
+ * is unreachable the entries simply wait.
  *
- * The "after" half is still a second write that can fail on its own, and
- * Phase 6 removes it: the script appends the trade to a Redis stream, and
- * a separate worker projects that stream into Mongo. Until then the
- * durable record can lag the live state, which is noted in ADR-014.
+ * What remains in JavaScript is only the slippage bound, which does not
+ * need to be atomic - it is an input to the script, not a mutation.
  */
 
 /** How far the price may move against the caller before the trade is refused. */
@@ -151,6 +148,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     userHoldings(userId),
     ECON_RESERVE,
     ECON_BURNED,
+    STREAM_TRADES,
     side,
     qty,
     id,
@@ -160,6 +158,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     limit,
     MAX_TRADE_SUPPLY_BPS,
     BOOTSTRAP_TRADE_QTY,
+    userId,
   );
 
   const [status, ...rest] = result;
@@ -169,106 +168,32 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     throw build ? build(...details) : ApiError.badRequest(code, 'Trade rejected');
   }
 
-  const [supplyAfterRaw, notionalRaw, spreadRaw, cashAfterRaw] = rest;
+  const [supplyAfterRaw, notionalRaw, spreadRaw, cashAfterRaw, streamId] = rest;
   const supplyAfter = Number(supplyAfterRaw);
   const notional = Number(notionalRaw);
   const spread = Number(spreadRaw);
   const cashAfter = Number(cashAfterRaw);
 
-  const trade = await projectToMongo({
-    userId,
-    good,
-    side,
-    qty,
-    supplyBefore,
-    supplyAfter,
-    basePrice,
-    notional,
-    spread,
-    cashAfter,
-  });
-
+  // The trade is already durable at this point - it is in the stream.
+  // What comes back is built from the script's own return values rather
+  // than read back from Mongo, which has very likely not been projected
+  // yet and is not the source of truth anyway.
   return {
-    trade,
-    cash: cashAfter,
-    supply: supplyAfter,
-    priceAfter: Math.round(price(basePrice, supplyAfter, good.k, good.n) * 100) / 100,
-  };
-}
-
-/**
- * Write the executed trade down in Mongo.
- *
- * This runs *after* the atomic block, so it can fail independently -
- * leaving Redis correct and Mongo behind. That is the dual write Phase 6
- * removes by making the script append to a Redis stream and having a
- * relay worker project it. Failures are logged loudly rather than
- * swallowed, because until then they need a human.
- */
-async function projectToMongo({
-  userId,
-  good,
-  side,
-  qty,
-  supplyBefore,
-  supplyAfter,
-  basePrice,
-  notional,
-  spread,
-  cashAfter,
-}) {
-  try {
-    await User.updateOne({ _id: userId }, { $set: { cash: cashAfter }, $inc: { tradeCount: 1 } });
-
-    if (side === 'buy') {
-      await addToHolding({ userId, goodId: good._id, qty, cost: notional });
-    } else {
-      await Holding.updateOne({ userId, goodId: good._id }, { $inc: { quantity: -qty } });
-      await Holding.updateOne(
-        { userId, goodId: good._id, quantity: { $lte: 0 } },
-        { $set: { avgCost: 0 } },
-      );
-    }
-
-    await Market.updateOne(
-      { goodId: good._id },
-      { $set: { supply: supplyAfter }, $inc: { vol24h: qty } },
-    );
-
-    return await Trade.create({
-      userId,
-      goodId: good._id,
-      side,
-      quantity: qty,
-      supplyBefore,
-      supplyAfter,
-      basePrice,
-      notional,
-      spread,
-      avgPrice: notional / qty,
-    });
-  } catch (err) {
-    log.error('trade executed in redis but failed to project to mongo', {
-      userId,
+    trade: {
+      id: streamId,
       goodId: good._id.toString(),
       side,
-      qty,
-      err: err.message,
-    });
-    throw err;
-  }
-}
-
-async function addToHolding({ userId, goodId, qty, cost }) {
-  const existing = await Holding.findOne({ userId, goodId });
-  if (!existing) {
-    await Holding.create({ userId, goodId, quantity: qty, avgCost: cost / qty });
-    return;
-  }
-  const totalCost = existing.avgCost * existing.quantity + cost;
-  existing.quantity += qty;
-  existing.avgCost = totalCost / existing.quantity;
-  await existing.save();
+      quantity: qty,
+      notional,
+      spread,
+      avgPrice: Math.round((notional / qty) * 100) / 100,
+      at: new Date().toISOString(),
+    },
+    cash: cashAfter,
+    supply: supplyAfter,
+    supplyBefore,
+    priceAfter: Math.round(price(basePrice, supplyAfter, good.k, good.n) * 100) / 100,
+  };
 }
 
 /**
