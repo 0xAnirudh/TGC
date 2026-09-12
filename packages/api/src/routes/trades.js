@@ -4,6 +4,7 @@ import { validateBody } from '../middleware/validate.js';
 import { tradeBodySchema } from '../schemas/market.js';
 import { executeTrade } from '../services/trading.js';
 import { Trade } from '../models/Trade.js';
+import { tradeRateLimit } from '../middleware/rateLimit.js';
 
 export const tradesRouter = Router();
 
@@ -18,23 +19,29 @@ export const tradesRouter = Router();
  * That is the correct way to give a client price control: the curve
  * still decides the price, and the client only gets to decline.
  */
-tradesRouter.post('/', authenticate, validateBody(tradeBodySchema), async (req, res) => {
-  const { goodId, side, qty, slippageBps } = req.body;
-  const result = await executeTrade({
-    userId: req.auth.userId,
-    goodId,
-    side,
-    qty,
-    slippageBps,
-  });
+tradesRouter.post(
+  '/',
+  authenticate,
+  tradeRateLimit,
+  validateBody(tradeBodySchema),
+  async (req, res) => {
+    const { goodId, side, qty, slippageBps } = req.body;
+    const result = await executeTrade({
+      userId: req.auth.userId,
+      goodId,
+      side,
+      qty,
+      slippageBps,
+    });
 
-  res.status(201).json({
-    trade: result.trade,
-    cash: result.cash,
-    supply: result.supply,
-    priceAfter: result.priceAfter,
-  });
-});
+    res.status(201).json({
+      trade: result.trade,
+      cash: result.cash,
+      supply: result.supply,
+      priceAfter: result.priceAfter,
+    });
+  },
+);
 
 /** The caller's own trade history, newest first. */
 tradesRouter.get('/', authenticate, async (req, res) => {

@@ -19,6 +19,10 @@ export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
+  // Behind Render's load balancer every request arrives from the proxy.
+  // Without this, req.ip is the proxy for everyone and the per-IP auth
+  // limit throttles the entire world into one bucket.
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '16kb' }));
 
   app.use('/health', healthRouter);

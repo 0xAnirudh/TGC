@@ -13,7 +13,7 @@ import {
 import { User } from '../../packages/api/src/models/User.js';
 import { buyCost, sellBreakdown, STARTING_GRANT } from '@tgc/shared';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
-import { makeGood, setSupply } from '../helpers/market.js';
+import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
 import { runOnce } from '../../packages/relay/src/index.js';
 import { STREAM_TRADES } from '../../packages/api/src/redis/keys.js';
 
@@ -265,9 +265,12 @@ describe('concurrency', () => {
   });
 
   it('holds exactly under 60 concurrent buys from 60 players', async () => {
+    // Created directly rather than through the register endpoint, which
+    // is rate limited to ten attempts per IP. Sixty of them is a trade
+    // concurrency test, not a registration test.
     const players = [];
     for (let i = 0; i < 60; i += 1) {
-      players.push((await makePlayer(`swarm_${i}`)).token);
+      players.push((await makePlayerDirect(`swarm_${i}`)).token);
     }
     const { id } = await makeGood({ basePrice: 20, k: 200_000, n: 1 });
     await setSupply(id, 100_000);
