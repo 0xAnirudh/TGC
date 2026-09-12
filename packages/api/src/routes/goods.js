@@ -5,7 +5,9 @@ import { ApiError } from '../util/errors.js';
 import { validateQuery } from '../middleware/validate.js';
 import { quoteQuerySchema } from '../schemas/market.js';
 import { listGoodsWithMarket, readMarketState, computeQuote } from '../services/market.js';
+import { priceHistory, VALID_RANGES } from '../services/history.js';
 import { price } from '@tgc/shared';
+import { z } from 'zod';
 
 export const goodsRouter = Router();
 
@@ -26,6 +28,10 @@ async function findGoodOr404(id) {
 /** FR-2.1 - the market listing. Public; no token required. */
 goodsRouter.get('/', async (req, res) => {
   res.json({ goods: await listGoodsWithMarket() });
+});
+
+const historyQuerySchema = z.object({
+  range: z.enum(VALID_RANGES).default('24h'),
 });
 
 /** FR-2.2 - one good in detail. */
@@ -59,4 +65,17 @@ goodsRouter.get('/:id/quote', validateQuery(quoteQuerySchema), async (req, res) 
     name: good.name,
     ...computeQuote({ basePrice, supply, k: good.k, n: good.n, side, qty }),
   });
+});
+
+/**
+ * FR-2.2 - price history for a chart.
+ *
+ * Reads snapshots written by the drift job. Long ranges are thinned to
+ * roughly 200 points, keeping real readings rather than averaging them
+ * into numbers that were never true.
+ */
+goodsRouter.get('/:id/history', validateQuery(historyQuerySchema), async (req, res) => {
+  const good = await findGoodOr404(req.params.id);
+  const history = await priceHistory(good._id, { range: req.validatedQuery.range });
+  res.json({ goodId: good._id.toString(), name: good.name, ...history });
 });
