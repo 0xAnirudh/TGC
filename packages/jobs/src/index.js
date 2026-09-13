@@ -3,6 +3,7 @@ import { connectMongo, disconnectMongo } from '@tgc/api/src/db/mongo.js';
 import { connectRedis, disconnectRedis } from '@tgc/api/src/redis/client.js';
 import { withJobLock } from '@tgc/api/src/services/jobLock.js';
 import { driftTick } from '@tgc/api/src/services/drift.js';
+import { revalueAll } from '@tgc/api/src/services/leaderboard.js';
 import { log } from '@tgc/api/src/log.js';
 
 /**
@@ -28,6 +29,15 @@ const JOBS = [
     lockTtlMs: 50_000,
     run: () => driftTick(),
   },
+  {
+    name: 'revalue',
+    // Every two minutes. The board is a ranking, not a live readout, and
+    // valuing every holding against the curve is the most expensive
+    // thing scheduled here.
+    schedule: '*/2 * * * *',
+    lockTtlMs: 110_000,
+    run: () => revalueAll(),
+  },
 ];
 
 export async function runJob(job) {
@@ -48,9 +58,10 @@ export async function start() {
     log.info('job scheduled', { job: job.name, schedule: job.schedule });
   }
 
-  // Run drift once at boot so a freshly seeded market has a first
-  // snapshot to chart rather than an empty graph for the first minute.
-  await runJob(JOBS[0]);
+  // Run both once at boot so a freshly seeded market has a first
+  // snapshot to chart and a populated board, rather than an empty graph
+  // and an empty leaderboard for the first minute.
+  for (const job of JOBS) await runJob(job);
 }
 
 export async function stop() {
