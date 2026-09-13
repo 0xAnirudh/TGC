@@ -4,6 +4,7 @@ import { log } from './log.js';
 import { connectMongo, disconnectMongo } from './db/mongo.js';
 import { connectRedis, disconnectRedis } from './redis/client.js';
 import { warmMarketState } from './services/market.js';
+import { attachRealtime, closeRealtime } from './realtime/server.js';
 
 const app = createApp();
 
@@ -33,6 +34,14 @@ async function connectStores() {
   // Warming needs both stores, so it waits for them. It only fills gaps
   // - see warmMarketState - so running it on every boot is safe.
   await warmMarketState().catch((err) => log.error('market warm failed', { err: err.message }));
+
+  // Attached after Redis is up, because the adapter and the price
+  // subscriber both need working connections to duplicate from.
+  try {
+    attachRealtime(server);
+  } catch (err) {
+    log.error('realtime failed to attach', { err: err.message });
+  }
 }
 
 connectStores();
@@ -51,7 +60,7 @@ async function shutdown(signal) {
   forced.unref();
 
   server.close(async () => {
-    await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
+    await Promise.allSettled([closeRealtime(), disconnectMongo(), disconnectRedis()]);
     process.exit(0);
   });
 }

@@ -13,6 +13,7 @@ import {
 } from '../redis/keys.js';
 import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded, readCash, readHoldings } from './accounts.js';
+import { publishPriceChange } from '../realtime/publish.js';
 import {
   buyCost,
   sellBreakdown,
@@ -173,6 +174,17 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   const notional = Number(notionalRaw);
   const spread = Number(spreadRaw);
   const cashAfter = Number(cashAfterRaw);
+
+  // Announce the new price. Fire and forget: a trade that executed and
+  // was written to the ledger must not fail because a notification
+  // could not be delivered.
+  publishPriceChange({
+    goodId: good._id.toString(),
+    price: Math.round(price(basePrice, supplyAfter, good.k, good.n) * 100) / 100,
+    supply: supplyAfter,
+    side,
+    quantity: qty,
+  }).catch(() => {});
 
   // The trade is already durable at this point - it is in the stream.
   // What comes back is built from the script's own return values rather
