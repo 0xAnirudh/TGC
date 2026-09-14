@@ -36,13 +36,13 @@ used Redis for more than caching.
 | 4 | Trading, sequential | done |
 | 5 | Atomicity (Redis Lua) | done — `v0.5-atomic` |
 | 6 | Durability (stream, relay, rebuild) | done |
-| 7 | Rate limiting | |
-| 8 | Drift and price history | |
-| 9 | Real-time (WebSockets) | |
-| 10 | Leaderboard and profiles | |
-| 11 | Issuing goods | |
-| 12 | Newspaper | |
-| 13 | Frontend | |
+| 7 | Rate limiting | done |
+| 8 | Drift and price history | done |
+| 9 | Real-time (WebSockets) | done |
+| 10 | Leaderboard and profiles | done |
+| 11 | Issuing goods | done |
+| 12 | Newspaper | done |
+| 13 | Frontend | done — **playable** |
 | 14 | Load testing | |
 | 15 | Deployment | |
 
@@ -59,15 +59,28 @@ docs/              implementation plan, architecture decision log
 ## Running
 
 ```bash
-docker compose up -d          # mongo + redis, or run them locally:
-                              #   brew services start redis
-                              #   (and point MONGO_URI at Atlas)
-cp .env.example .env          # then fill in JWT_SECRET
-npm install
-npm run dev --workspace=@tgc/api
+# 1. stores
+docker compose up -d                 # or: brew services start redis
+                                     # (and point MONGO_URI at Atlas)
 
-curl localhost:4000/health
+# 2. configure
+cp .env.example .env                 # fill in MONGO_URI and JWT_SECRET
+npm install
+npm run seed --workspace=@tgc/api    # create the starting market
+
+# 3. run all four processes, each in its own terminal
+npm run dev --workspace=@tgc/api     # the API            :4000
+npm run dev --workspace=@tgc/relay   # stream -> mongo projector
+npm run dev --workspace=@tgc/jobs    # drift, leaderboard, newspaper
+npm run dev --workspace=@tgc/web     # the frontend       :5173
 ```
+
+Then open <http://localhost:5173>, create an account, and trade. You
+start with 100,000 Notes.
+
+**The API alone is enough to trade**, but without the relay nothing
+reaches MongoDB, and without the job runner prices never drift, the
+leaderboard stays empty and no newspaper is printed.
 
 `GET /health` is readiness: it checks both stores and answers 503 while
 either is down, naming which one. `GET /health/live` is liveness and

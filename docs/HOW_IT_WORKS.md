@@ -152,6 +152,11 @@ GET  /goods             list the market
 GET  /goods/:id         one good in detail
 GET  /goods/:id/quote   price a hypothetical trade
 POST /trades            buy or sell          (needs token)
+POST /issue             create your own good (needs token)
+GET  /leaderboard       net worth ranking
+GET  /newspaper         today's edition
+GET  /players/:name     a public profile
+GET  /goods/:id/history price chart data
 GET  /trades            your trade history   (needs token)
 GET  /portfolio         cash, holdings, P/L  (needs token)
 GET  /health            are both databases up?
@@ -169,9 +174,13 @@ GET  /health            are both databases up?
   success. See ADR-013.
 - **Phase 5** - *done.* See section 7.
 - **Phase 6** - *done.* See section 8.
-- **Phases 7-15** - rate limiting, prices that drift on their own, live
-  updates, a leaderboard, player-created goods, a daily newspaper, the
-  frontend, load testing, deployment.
+- **Phases 7-13** - *done.* Rate limiting (a token bucket, also in Lua,
+  for the same atomicity reason), prices that drift on their own every
+  minute, live updates over WebSockets, a net worth leaderboard,
+  player-issued goods, a daily newspaper written from templates, and a
+  deliberately plain frontend.
+- **Phases 14-15** - load testing with published numbers, and
+  deployment. Not needed to play it.
 
 If someone asks what is technically interesting about this project, the
 answer is sections 3, 4, 7 and 8. The rest is competent CRUD.
