@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, notes } from '../api.js';
+import { api } from '../api.js';
+import { notes, Notice, Figure } from '../ui/index.jsx';
 
 export default function Issue({ auth }) {
   const [req, setReq] = useState(null);
@@ -21,7 +22,7 @@ export default function Issue({ auth }) {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error && !req) return <p className="err">{error}</p>;
+  if (error && !req) return <Notice kind="err">{error}</Notice>;
   if (!req) return <p className="muted">Loading…</p>;
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -52,14 +53,18 @@ export default function Issue({ auth }) {
 
   return (
     <>
-      <h2>Issue a good</h2>
-      <p className="muted">
-        Costs <span className="num">{notes(req.fee)}</span> Notes, which are burned. You get no free
-        allocation — the good starts at zero supply and you buy on the same curve as everyone else.
-      </p>
+      <div className="page-head">
+        <div className="kicker">For established traders</div>
+        <h2>Issue a good</h2>
+        <p className="lede">
+          Costs <span className="num">{notes(req.fee)}</span> Notes, which are burned. You get no
+          free allocation — you buy on the same curve as everyone else, from the same starting
+          point.
+        </p>
+      </div>
 
       {!req.eligible && (
-        <div className="panel">
+        <div className="card">
           <strong>Not yet eligible.</strong>
           <ul>
             {req.failures.map((f) => (
@@ -72,13 +77,13 @@ export default function Issue({ auth }) {
         </div>
       )}
 
-      <form onSubmit={submit}>
-        <div className="row">
-          <div className="col">
+      <form onSubmit={submit} className="card">
+        <div className="grid two">
+          <div>
             <label>Name</label>
             <input value={form.name} onChange={set('name')} placeholder="Quartz" />
           </div>
-          <div className="col">
+          <div>
             <label>Colour</label>
             <select value={form.colorToken} onChange={set('colorToken')}>
               {req.colors.map((c) => (
@@ -90,8 +95,8 @@ export default function Issue({ auth }) {
           </div>
         </div>
 
-        <div className="row">
-          <div className="col">
+        <div className="grid two">
+          <div>
             <label>Starting price (Notes per unit at zero supply)</label>
             <input
               type="number"
@@ -101,7 +106,7 @@ export default function Issue({ auth }) {
               onChange={set('basePrice')}
             />
           </div>
-          <div className="col">
+          <div>
             <label>
               Depth — k (bigger is slower to move, {notes(req.curve.k.min)}–{notes(req.curve.k.max)}
               )
@@ -114,7 +119,7 @@ export default function Issue({ auth }) {
               onChange={set('k')}
             />
           </div>
-          <div className="col">
+          <div>
             <label>
               Steepness — n ({req.curve.n.min}–{req.curve.n.max})
             </label>
@@ -137,7 +142,7 @@ export default function Issue({ auth }) {
           .
         </p>
 
-        {error && <p className="err">{error}</p>}
+        {error && <Notice kind="err">{error}</Notice>}
 
         <p style={{ marginTop: 12 }}>
           <button disabled={busy || !req.eligible || !form.name.trim()}>

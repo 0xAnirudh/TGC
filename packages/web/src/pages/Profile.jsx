@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { api, notes } from '../api.js';
+import { api } from '../api.js';
+import { notes, Figure, Notice, Empty } from '../ui/index.jsx';
 
 export default function Profile() {
   const { username } = useParams();
@@ -13,57 +14,72 @@ export default function Profile() {
       .catch((e) => setError(e.message));
   }, [username]);
 
-  if (error) return <p className="err">{error}</p>;
-  if (!player) return <p className="muted">Loading…</p>;
+  if (error) return <Notice kind="err">{error}</Notice>;
+  if (!player) return <p className="muted">Looking them up…</p>;
 
   return (
     <>
-      <h2>{player.username}</h2>
-
-      <div className="panel">
-        <span className="stat">
-          <span className="label">Net worth</span>
-          <span className="value num">{notes(player.netWorth)}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Rank</span>
-          <span className="value num">{player.rank ?? '—'}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Trades</span>
-          <span className="value num">{notes(player.tradeCount)}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Member since</span>
-          <span className="value">{new Date(player.memberSince).toLocaleDateString()}</span>
-        </span>
+      <div className="page-head">
+        <div className="kicker">Trader</div>
+        <h2>{player.username}</h2>
       </div>
 
-      {player.holdings ? (
-        player.holdings.length === 0 ? (
-          <p className="muted">Holds nothing right now.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Good</th>
-                <th className="r">Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {player.holdings.map((h) => (
-                <tr key={h.goodId}>
-                  <td>
-                    <Link to={`/goods/${h.goodId}`}>{h.name}</Link>
-                  </td>
-                  <td className="r num">{notes(h.quantity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )
+      <div className="grid four" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <Figure
+            label="Net worth"
+            value={<span className="num">{notes(player.netWorth)}</span>}
+            size="lg"
+          />
+        </div>
+        <div className="card">
+          <Figure
+            label="Rank"
+            value={<span className="num">{player.rank ?? '—'}</span>}
+            tone={player.rank === 1 ? 'up' : ''}
+          />
+        </div>
+        <div className="card">
+          <Figure label="Trades" value={<span className="num">{notes(player.tradeCount)}</span>} />
+        </div>
+        <div className="card">
+          <Figure
+            label="Trading since"
+            value={
+              <span className="num" style={{ fontSize: 16 }}>
+                {new Date(player.memberSince).toLocaleDateString()}
+              </span>
+            }
+          />
+        </div>
+      </div>
+
+      <h3>Cargo</h3>
+      {!player.holdings ? (
+        <Empty>This trader keeps their positions private.</Empty>
+      ) : player.holdings.length === 0 ? (
+        <Empty>Holding nothing at present.</Empty>
       ) : (
-        <p className="muted">This player keeps their positions private.</p>
+        <table className="ledger">
+          <thead>
+            <tr>
+              <th>Good</th>
+              <th className="r">Units</th>
+            </tr>
+          </thead>
+          <tbody>
+            {player.holdings.map((h) => (
+              <tr key={h.goodId}>
+                <td>
+                  <Link to={`/goods/${h.goodId}`} className="good-name">
+                    {h.name}
+                  </Link>
+                </td>
+                <td className="r num">{notes(h.quantity)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </>
   );

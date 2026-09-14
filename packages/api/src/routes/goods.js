@@ -135,6 +135,7 @@ goodsRouter.get('/:id/quote', validateQuery(quoteQuerySchema), async (req, res) 
  */
 goodsRouter.get('/:id/history', validateQuery(historyQuerySchema), async (req, res) => {
   const good = await findGoodOr404(req.params.id);
-  const history = await priceHistory(good._id, { range: req.validatedQuery.range });
-  res.json({ goodId: good._id.toString(), name: good.name, ...history });
+  const region = await regionFor(req);
+  const history = await priceHistory(good._id, { range: req.validatedQuery.range, region });
+  res.json({ goodId: good._id.toString(), name: good.name, region, ...history });
 });

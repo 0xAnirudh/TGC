@@ -23,13 +23,19 @@ export const VALID_RANGES = Object.keys(RANGES);
  * number that was never true, which is a strange thing to draw on a
  * price chart.
  */
-export async function priceHistory(goodId, { range = '24h', maxPoints = 200 } = {}) {
+export async function priceHistory(goodId, { range = '24h', maxPoints = 200, region } = {}) {
   const windowMs = RANGES[range] ?? RANGES['24h'];
   const since = new Date(Date.now() - windowMs);
 
-  const snapshots = await PriceSnapshot.find({ goodId, at: { $gte: since } })
-    .sort({ at: 1 })
-    .lean();
+  // Filtered to ONE market. Without this the query returns every
+  // region's snapshots interleaved and the chart plots them as a single
+  // series - which drew a sawtooth alternating between the harbour's
+  // price and the frontier's, and looked like wild volatility rather
+  // than four separate markets.
+  const query = { goodId, at: { $gte: since } };
+  if (region) query.region = region;
+
+  const snapshots = await PriceSnapshot.find(query).sort({ at: 1 }).lean();
 
   if (snapshots.length <= maxPoints) {
     return { range, points: snapshots.map(toPoint) };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, notes } from '../api.js';
-import { colorFor } from './Market.jsx';
+import { api } from '../api.js';
+import { colorFor, notes, money, Figure, Meter, Notice, Empty } from '../ui/index.jsx';
 
 export default function Portfolio({ auth }) {
   const [data, setData] = useState(null);
@@ -17,152 +17,178 @@ export default function Portfolio({ auth }) {
     load();
   }, []);
 
-  async function claimBonus() {
+  async function claim() {
     try {
       const res = await api('/me/bonus', { method: 'POST' });
-      setBonus(`Claimed ${notes(res.amount)} Notes.`);
+      setBonus({ kind: 'ok', text: `Claimed ${notes(res.amount)} Notes.` });
       await auth.refresh();
       load();
     } catch (err) {
-      setBonus(err.message);
+      setBonus({ kind: 'err', text: err.message });
     }
   }
 
-  if (error) return <p className="err">{error}</p>;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (error) return <Notice kind="err">{error}</Notice>;
+  if (!data) return <p className="muted">Counting the cargo…</p>;
+
+  const net = data.netWorth;
+  const pl = data.unrealizedPL;
 
   return (
     <>
-      <h2>Portfolio</h2>
-
-      <p className="muted">
-        You are in <strong>{data.region}</strong>. Everything below is valued at what it would fetch
-        here — the same cargo is worth more somewhere else, which is the point of moving it.
-      </p>
-
-      <div className="panel">
-        <span className="stat">
-          <span className="label">Cash</span>
-          <span className="value num">{notes(data.cash)}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Hold</span>
-          <span className="value num">
-            {notes(data.cargo.used)} / {notes(data.cargo.capacity)}
-          </span>
-        </span>
-        {data.debt > 0 && (
-          <span className="stat">
-            <span className="label">Owed</span>
-            <span className="value num down">{notes(data.debt)}</span>
-          </span>
-        )}
-        <span className="stat">
-          <span className="label">Holdings</span>
-          <span className="value num">{notes(data.holdingsValue)}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Net worth</span>
-          <span className="value num">{notes(data.netWorth)}</span>
-        </span>
-        <span className="stat">
-          <span className="label">Unrealised P/L</span>
-          <span className={`value num ${data.unrealizedPL >= 0 ? 'up' : 'down'}`}>
-            {data.unrealizedPL >= 0 ? '+' : ''}
-            {notes(data.unrealizedPL)}
-          </span>
-        </span>
+      <div className="page-head">
+        <div className="kicker">Standing at {data.region}</div>
+        <h2>Your books</h2>
+        <p className="lede">
+          Everything below is valued at what it would fetch <em>here</em>. The same cargo is worth
+          more somewhere else, which is the entire reason to move it.
+        </p>
       </div>
 
-      <p>
-        <button className="plain" onClick={claimBonus}>
-          Claim daily bonus
+      <div className="grid four" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <Figure label="Net worth" value={<span className="num">{notes(net)}</span>} size="lg" />
+        </div>
+        <div className="card">
+          <Figure label="Cash" value={<span className="num">{notes(data.cash)}</span>} />
+        </div>
+        <div className="card">
+          <Figure
+            label="Unrealised"
+            value={
+              <span className="num">
+                {pl >= 0 ? '+' : ''}
+                {notes(pl)}
+              </span>
+            }
+            tone={pl >= 0 ? 'up' : 'down'}
+          />
+        </div>
+        <div className="card">
+          <Figure
+            label="Hold"
+            value={
+              <span className="num">
+                {notes(data.cargo.used)}
+                <span className="faint"> / {notes(data.cargo.capacity)}</span>
+              </span>
+            }
+          />
+          <Meter used={data.cargo.used} capacity={data.cargo.capacity} />
+        </div>
+      </div>
+
+      {data.debt > 0 && (
+        <Notice kind="err">
+          You owe <span className="num">{notes(data.debt)}</span> Notes, and it grows on a timer.{' '}
+          <Link to="/bank">Settle it at the Counting House.</Link>
+        </Notice>
+      )}
+
+      <div style={{ marginBottom: 18 }}>
+        <button className="ghost" onClick={claim}>
+          Claim the daily bonus
         </button>
         {bonus && (
-          <span className="muted" style={{ marginLeft: 12 }}>
-            {bonus}
+          <span
+            className={`small ${bonus.kind === 'ok' ? 'up' : 'down'}`}
+            style={{ marginLeft: 12 }}
+          >
+            {bonus.text}
           </span>
         )}
-      </p>
+      </div>
 
-      <p className="muted">
-        Holdings are valued at what selling them right now would actually return — spread taken and
-        the curve walked back down — not at the displayed price times quantity.
-      </p>
-
-      {data.shorts && data.shorts.length > 0 && (
+      {data.shorts?.length > 0 && (
         <>
-          <h3>Shorts</h3>
-          <table>
+          <h3>Open shorts</h3>
+          <div className="scroller" style={{ marginBottom: 20 }}>
+            <table className="ledger">
+              <thead>
+                <tr>
+                  <th>Good</th>
+                  <th className="r">Units</th>
+                  <th className="r">Entry</th>
+                  <th className="r">Now</th>
+                  <th className="r">Forced out</th>
+                  <th className="r">P/L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.shorts.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <Link to={`/goods/${s.goodId}`} className="good-name">
+                        {s.name}
+                      </Link>
+                      <span className="chip" style={{ marginLeft: 8 }}>
+                        {s.region}
+                      </span>
+                    </td>
+                    <td className="r num">{notes(s.quantity)}</td>
+                    <td className="r num">{money(s.entryPrice)}</td>
+                    <td className="r num">{money(s.currentPrice)}</td>
+                    <td className="r num down">{money(s.liquidationPrice)}</td>
+                    <td className={`r num ${s.unrealizedPL >= 0 ? 'up' : 'down'}`}>
+                      {s.unrealizedPL >= 0 ? '+' : ''}
+                      {notes(s.unrealizedPL)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <h3>Cargo</h3>
+      {data.holdings.length === 0 ? (
+        <Empty>
+          The hold is empty. <Link to="/">Find something worth carrying.</Link>
+        </Empty>
+      ) : (
+        <div className="scroller">
+          <table className="ledger">
             <thead>
               <tr>
                 <th>Good</th>
                 <th className="r">Units</th>
-                <th className="r">Entry</th>
-                <th className="r">Now</th>
-                <th className="r">Forced out at</th>
+                <th className="r">Paid</th>
+                <th className="r">Price here</th>
+                <th className="r">Worth here</th>
                 <th className="r">P/L</th>
               </tr>
             </thead>
             <tbody>
-              {data.shorts.map((s) => (
-                <tr key={s.id}>
+              {data.holdings.map((h) => (
+                <tr key={h.goodId}>
                   <td>
-                    <Link to={`/goods/${s.goodId}`}>{s.name}</Link>
-                    <span className="muted"> · {s.region}</span>
+                    <span className="good">
+                      <span className="swatch" style={{ background: colorFor(h.colorToken) }} />
+                      <Link to={`/goods/${h.goodId}`} className="good-name">
+                        {h.name}
+                      </Link>
+                    </span>
                   </td>
-                  <td className="r num">{notes(s.quantity)}</td>
-                  <td className="r num">{s.entryPrice}</td>
-                  <td className="r num">{s.currentPrice}</td>
-                  <td className="r num down">{s.liquidationPrice}</td>
-                  <td className={`r num ${s.unrealizedPL >= 0 ? 'up' : 'down'}`}>
-                    {s.unrealizedPL >= 0 ? '+' : ''}
-                    {notes(s.unrealizedPL)}
+                  <td className="r num">{notes(h.quantity)}</td>
+                  <td className="r num muted">{money(h.avgCost)}</td>
+                  <td className="r num">{money(h.currentPrice)}</td>
+                  <td className="r num">{notes(h.value)}</td>
+                  <td className={`r num ${h.unrealizedPL >= 0 ? 'up' : 'down'}`}>
+                    {h.unrealizedPL >= 0 ? '+' : ''}
+                    {notes(h.unrealizedPL)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <h3>Cargo</h3>
-        </>
+        </div>
       )}
 
-      {data.holdings.length === 0 ? (
-        <p className="muted">
-          Nothing held yet. <Link to="/">Go to the market.</Link>
-        </p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Good</th>
-              <th className="r">Quantity</th>
-              <th className="r">Avg cost</th>
-              <th className="r">Price</th>
-              <th className="r">Value</th>
-              <th className="r">P/L</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.holdings.map((h) => (
-              <tr key={h.goodId}>
-                <td>
-                  <span className="tag" style={{ background: colorFor(h.colorToken) }} />
-                  <Link to={`/goods/${h.goodId}`}>{h.name}</Link>
-                </td>
-                <td className="r num">{notes(h.quantity)}</td>
-                <td className="r num">{h.avgCost.toFixed(2)}</td>
-                <td className="r num">{h.currentPrice.toFixed(2)}</td>
-                <td className="r num">{notes(h.value)}</td>
-                <td className={`r num ${h.unrealizedPL >= 0 ? 'up' : 'down'}`}>
-                  {h.unrealizedPL >= 0 ? '+' : ''}
-                  {notes(h.unrealizedPL)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <p className="small faint" style={{ marginTop: 12 }}>
+        Cargo is valued at what selling it right now would actually return — spread taken, curve
+        walked back down — not at the shown price times quantity.
+      </p>
     </>
   );
 }

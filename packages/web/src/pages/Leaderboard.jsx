@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, notes } from '../api.js';
+import { api } from '../api.js';
+import { notes, Notice, Empty } from '../ui/index.jsx';
 
 export default function Leaderboard() {
   const [entries, setEntries] = useState(null);
@@ -12,43 +13,74 @@ export default function Leaderboard() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <p className="err">{error}</p>;
-  if (!entries) return <p className="muted">Loading…</p>;
+  if (error) return <Notice kind="err">{error}</Notice>;
+  if (!entries) return <p className="muted">Tallying…</p>;
+
+  const top = entries[0]?.netWorth ?? 1;
 
   return (
     <>
-      <h2>Leaderboard</h2>
-      <p className="muted">
-        Net worth is cash plus what every holding would fetch if sold now. Recomputed on a schedule,
-        never when you load this page.
-      </p>
+      <div className="page-head">
+        <div className="kicker">Standings</div>
+        <h2>Who is ahead</h2>
+        <p className="lede">
+          Net worth is cash plus what every holding would fetch if sold now, valued at the best
+          market for it. Recomputed on a schedule — never when you open this page.
+        </p>
+      </div>
 
       {entries.length === 0 ? (
-        <p className="muted">
-          The board has not been built yet. Start the job runner with
-          <code> npm run dev --workspace=@tgc/jobs</code>.
-        </p>
+        <Empty>The books have not been tallied yet.</Empty>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th className="r">#</th>
-              <th>Player</th>
-              <th className="r">Net worth</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.username}>
-                <td className="r num">{e.rank}</td>
-                <td>
-                  <Link to={`/players/${e.username}`}>{e.username}</Link>
-                </td>
-                <td className="r num">{notes(e.netWorth)}</td>
+        <div className="scroller">
+          <table className="ledger">
+            <thead>
+              <tr>
+                <th className="r" style={{ width: 60 }}>
+                  #
+                </th>
+                <th>Trader</th>
+                <th style={{ width: '40%' }} />
+                <th className="r">Net worth</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.username}>
+                  <td className="r num faint">{e.rank}</td>
+                  <td>
+                    <Link to={`/players/${e.username}`} className="good-name">
+                      {e.username}
+                    </Link>
+                  </td>
+                  <td>
+                    {/* A bar makes the distance between first and tenth
+                        legible, which a column of numbers does not. */}
+                    <span
+                      style={{
+                        display: 'block',
+                        height: 6,
+                        background: 'var(--surface-sunk)',
+                        borderRadius: 3,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          height: '100%',
+                          width: `${Math.max(2, (e.netWorth / top) * 100)}%`,
+                          background: e.rank === 1 ? 'var(--gold)' : 'var(--accent)',
+                          borderRadius: 3,
+                        }}
+                      />
+                    </span>
+                  </td>
+                  <td className="r num">{notes(e.netWorth)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

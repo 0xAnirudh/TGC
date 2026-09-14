@@ -152,8 +152,12 @@ describe('GET /goods/:id/history', () => {
     await driftTick();
 
     const res = await request(app).get(`/goods/${id}/history?range=24h`).expect(200);
-    // Two ticks, one snapshot per region each.
-    expect(res.body.points.length).toBe(2 * REGIONS.length);
+
+    // Two ticks, and the history is scoped to ONE market. Returning
+    // every region interleaved is what made the chart draw a sawtooth
+    // alternating between the harbour's price and the frontier's.
+    expect(res.body.points).toHaveLength(2);
+    expect(res.body.region).toBe(DEFAULT_REGION);
     expect(res.body.points[0]).toHaveProperty('price');
     expect(res.body.points[0]).toHaveProperty('supply');
   });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Notice } from '../ui/index.jsx';
 
 export default function Login({ auth }) {
   const [mode, setMode] = useState('login');
@@ -17,47 +18,69 @@ export default function Login({ auth }) {
       await auth.login(mode === 'login' ? '/auth/login' : '/auth/register', { username, password });
       navigate('/');
     } catch (err) {
-      // Show the field-level messages when validation failed, so a
-      // rejected password says why rather than just "invalid".
+      // Field-level messages when validation failed, so a rejected
+      // password says why rather than just "invalid".
       setError(err.details?.map?.((d) => d.message).join(' ') || err.message);
     } finally {
       setBusy(false);
     }
   }
 
+  const registering = mode === 'register';
+
   return (
-    <div style={{ maxWidth: 340 }}>
-      <h2>{mode === 'login' ? 'Sign in' : 'Create an account'}</h2>
-
-      <form onSubmit={submit}>
-        <label>Username</label>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-
-        <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-
-        {error && <p className="err">{error}</p>}
-
-        <p style={{ marginTop: 14 }}>
-          <button disabled={busy || !username || !password}>
-            {busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
+    <div style={{ maxWidth: 380, margin: '40px auto' }}>
+      <div className="page-head" style={{ textAlign: 'center' }}>
+        <div className="kicker">General Company</div>
+        <h2>{registering ? 'Open an account' : 'Sign in'}</h2>
+        <p className="lede" style={{ margin: '0 auto' }}>
+          {registering
+            ? 'New traders are staked 100,000 Notes and begin at Saltmarket Harbour.'
+            : 'Back to the ledger.'}
         </p>
-      </form>
+      </div>
 
-      <p className="muted">
-        {mode === 'login' ? 'No account yet? ' : 'Already registered? '}
+      <div className="card">
+        <form onSubmit={submit}>
+          <label>Trader name</label>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            autoComplete="username"
+          />
+
+          <label style={{ marginTop: 12 }}>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={registering ? 'new-password' : 'current-password'}
+          />
+
+          {error && <Notice kind="err">{error}</Notice>}
+
+          <button
+            style={{ width: '100%', marginTop: 16 }}
+            disabled={busy || !username || !password}
+          >
+            {busy ? 'Just a moment…' : registering ? 'Open the account' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+
+      <p className="muted small" style={{ textAlign: 'center', marginTop: 14 }}>
+        {registering ? 'Already trading? ' : 'No account yet? '}
         <a
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setMode(mode === 'login' ? 'register' : 'login');
+            setMode(registering ? 'login' : 'register');
             setError(null);
           }}
         >
-          {mode === 'login' ? 'Create one' : 'Sign in'}
+          {registering ? 'Sign in' : 'Open one'}
         </a>
-        {mode === 'register' && ' — new accounts start with 100,000 Notes.'}
       </p>
     </div>
   );

@@ -1,43 +1,165 @@
 /*
- * One stylesheet, no framework.
+ * General Company - the ledger.
  *
- * The UI is deliberately plain: this exists to exercise the backend and
- * let someone use the system without reading documentation, not to be a
- * design piece. Default fonts, a monospace stack for anything numeric so
- * columns line up, and enough layout to be readable.
+ * The world is Notes, Saltmarket Harbour and The Daily Ledger, so the
+ * interface is a nineteenth-century commodities ledger: warm paper,
+ * ruled lines, letterpress serif headings, and columns of figures that
+ * align on the decimal.
+ *
+ * What keeps it from being a costume is that it is also a trading
+ * terminal. Prices move every few seconds, so numbers are monospaced and
+ * tabular (a changing digit must never reflow a row), changes announce
+ * themselves with a brief flash, and the information a decision needs is
+ * on the screen where the decision is made.
  */
 
+/* ---------------------------------------------------------------- *
+ * Tokens
+ * ---------------------------------------------------------------- */
+
 :root {
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #6b6b6b;
-  --line: #e0e0e0;
-  --accent: #1f5fbf;
-  --up: #0a7a3d;
-  --down: #b3261e;
-  --panel: #fafafa;
+  /* Paper. Warm rather than white - a cold grey page makes the serif
+     look like a mistake instead of a choice. */
+  --paper: #f6f2e9;
+  --surface: #fffdf7;
+  --surface-sunk: #f1ece0;
+
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+  --ink-faint: #8a8177;
+
+  --rule: #e2d9c8;
+  --rule-strong: #cfc3ac;
+
+  /* One accent, used sparingly. Iron-gall ink rather than a UI blue. */
+  --accent: #2c4a6e;
+  --accent-soft: #e8eef5;
+
+  /* Ledger green and red. Muted - a page of bright red is unreadable. */
+  --up: #2f6b44;
+  --up-soft: #e4efe7;
+  --down: #9a2f24;
+  --down-soft: #f7e7e4;
+
+  --gold: #a07c2c;
+
+  --radius: 3px;
+  --shadow: 0 1px 2px rgba(28, 25, 23, 0.05), 0 1px 1px rgba(28, 25, 23, 0.04);
+
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-num: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --page: 1140px;
 }
 
-* {
+[data-theme='dark'] {
+  --paper: #14120f;
+  --surface: #1c1915;
+  --surface-sunk: #100e0c;
+
+  --ink: #f2ece0;
+  --ink-soft: #a9a195;
+  --ink-faint: #776f64;
+
+  --rule: #2e2922;
+  --rule-strong: #433c32;
+
+  --accent: #8fb3dc;
+  --accent-soft: #1e2833;
+
+  --up: #6fbf8b;
+  --up-soft: #17281d;
+  --down: #e08a7d;
+  --down-soft: #2a1714;
+
+  --gold: #d6ab55;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------------------------------------------------------------- *
+ * Base
+ * ---------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  font-size: 15px;
-  color: var(--fg);
-  background: var(--bg);
-  line-height: 1.5;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper);
+  /* A faint horizontal rule pattern, like a ledger page. Barely there -
+     if you can see it clearly it is too strong. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 31px,
+    color-mix(in srgb, var(--rule) 28%, transparent) 31px 32px
+  );
 }
 
-.num {
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  font-variation-settings: 'opsz' 40;
 }
+
+h1 {
+  font-size: 26px;
+}
+h2 {
+  font-size: 30px;
+  line-height: 1.15;
+  margin-bottom: 6px;
+  font-variation-settings: 'opsz' 96;
+}
+h3 {
+  font-size: 15px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+a:hover {
+  border-bottom-color: var(--accent);
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+/* Every numeral in the app. Tabular so columns line up and a ticking
+   price does not shuffle the row it lives in. */
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.02em;
+}
+
 .up {
   color: var(--up);
 }
@@ -45,158 +167,700 @@ body {
   color: var(--down);
 }
 .muted {
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--ink-soft);
+}
+.faint {
+  color: var(--ink-faint);
 }
 
-header {
-  border-bottom: 1px solid var(--line);
-  padding: 12px 20px;
+.small {
+  font-size: 12.5px;
+}
+.label {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- *
+ * Masthead
+ * ---------------------------------------------------------------- */
+
+.masthead {
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.masthead-inner {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0 24px;
   display: flex;
-  align-items: baseline;
-  gap: 18px;
+  align-items: center;
+  gap: 16px;
+  min-height: 58px;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  font-variation-settings: 'opsz' 120;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  border: 0;
+  white-space: nowrap;
+}
+.wordmark:hover {
+  border: 0;
+}
+
+nav.primary {
+  display: flex;
+  gap: 2px;
+  flex: 1;
   flex-wrap: wrap;
 }
-header h1 {
-  font-size: 17px;
-  margin: 0 12px 0 0;
+
+nav.primary a {
+  border: 0;
+  color: var(--ink-soft);
+  padding: 5px 9px;
+  white-space: nowrap;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
-header nav a {
-  margin-right: 14px;
-  color: var(--accent);
-  text-decoration: none;
+nav.primary a:hover {
+  background: var(--surface-sunk);
+  color: var(--ink);
 }
-header nav a:hover {
-  text-decoration: underline;
+nav.primary a.active {
+  color: var(--ink);
+  background: var(--surface-sunk);
 }
-header .spacer {
-  flex: 1;
+
+/* The purse: who you are, what you hold, what you owe. */
+.purse {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
 }
+.purse-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.purse-item .label {
+  font-size: 9.5px;
+}
+.purse-item .v {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- *
+ * Layout
+ * ---------------------------------------------------------------- */
 
 main {
-  padding: 20px;
-  max-width: 1000px;
+  max-width: var(--page);
   margin: 0 auto;
-}
-h2 {
-  font-size: 18px;
-  margin: 0 0 14px;
-}
-h3 {
-  font-size: 15px;
-  margin: 20px 0 8px;
+  padding: 26px 24px 80px;
 }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
+.page-head {
+  margin-bottom: 20px;
 }
-th,
-td {
-  text-align: left;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-}
-th {
+.page-head .kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
   font-weight: 600;
-  font-size: 13px;
-  color: var(--muted);
+  margin-bottom: 3px;
 }
-td.r,
-th.r {
+.page-head .lede {
+  color: var(--ink-soft);
+  max-width: 72ch;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+.grid.three {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.grid.four {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.card.tight {
+  padding: 12px 14px;
+}
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* ---------------------------------------------------------------- *
+ * Ledger tables
+ * ---------------------------------------------------------------- */
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ledger th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-faint);
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--surface-sunk);
+  white-space: nowrap;
+}
+
+.ledger td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+.ledger tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ledger tbody tr {
+  transition: background 0.12s ease;
+}
+.ledger tbody tr:hover {
+  background: var(--surface-sunk);
+}
+
+.r {
   text-align: right;
 }
-tbody tr:hover {
-  background: var(--panel);
+.ledger th.r {
+  text-align: right;
 }
 
-a {
-  color: var(--accent);
-}
+/* ---------------------------------------------------------------- *
+ * Goods
+ * ---------------------------------------------------------------- */
 
-.panel {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: 14px;
-  margin-bottom: 16px;
-}
-
-.row {
+.good {
   display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
 }
-.col {
-  flex: 1;
-  min-width: 260px;
+.swatch {
+  width: 8px;
+  height: 22px;
+  border-radius: 1px;
+  flex: none;
 }
+.good-name {
+  font-weight: 500;
+  color: var(--ink);
+  border: 0;
+}
+.good-name:hover {
+  color: var(--accent);
+  border: 0;
+}
+
+/* A price that has just moved, briefly lit. Short enough not to be
+   decoration, long enough to catch the eye mid-scan. */
+@keyframes lit-up {
+  from {
+    background: var(--up-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+@keyframes lit-down {
+  from {
+    background: var(--down-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+.flash-up {
+  animation: lit-up 1.1s ease-out;
+}
+.flash-down {
+  animation: lit-down 1.1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-up,
+  .flash-down {
+    animation: none;
+  }
+}
+
+/* The arbitrage gap, drawn rather than only stated. The bar is what
+   makes one row obviously better than another at a glance. */
+.gap-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.gap-bar {
+  width: 46px;
+  height: 5px;
+  background: var(--surface-sunk);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: none;
+}
+.gap-bar span {
+  display: block;
+  height: 100%;
+  background: var(--up);
+  border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------- *
+ * Figures
+ * ---------------------------------------------------------------- */
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.figure .v {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+.figure .v.lg {
+  font-size: 34px;
+}
+.figure .sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* A meter for anything with a capacity: the hold, the debt limit. */
+.meter {
+  height: 7px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 7px;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.35s ease;
+}
+.meter.warn span {
+  background: var(--gold);
+}
+.meter.full span {
+  background: var(--down);
+}
+
+/* ---------------------------------------------------------------- *
+ * Controls
+ * ---------------------------------------------------------------- */
 
 label {
   display: block;
-  margin: 10px 0 3px;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  margin: 0 0 5px;
 }
-input,
-select,
-button {
-  font: inherit;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--fg);
-}
+
 input,
 select {
   width: 100%;
+  font: inherit;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  padding: 8px 11px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
-button {
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
+input:focus,
+select:focus {
+  outline: none;
   border-color: var(--accent);
-  width: auto;
-  padding: 7px 16px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+select {
+  font-family: var(--font-ui);
+}
+
+button {
+  font: inherit;
+  font-weight: 500;
+  font-size: 13.5px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  cursor: pointer;
+  transition:
+    filter 0.12s ease,
+    transform 0.06s ease;
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.42;
   cursor: not-allowed;
 }
-button.plain {
-  background: #fff;
-  color: var(--fg);
-  border-color: var(--line);
-}
 
-.err {
-  color: var(--down);
-  margin: 10px 0;
-  font-size: 14px;
+button.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule-strong);
 }
-.ok {
-  color: var(--up);
-  margin: 10px 0;
-  font-size: 14px;
+button.ghost:hover:not(:disabled) {
+  background: var(--surface-sunk);
+  filter: none;
 }
-
-.stat {
-  display: inline-block;
-  margin-right: 26px;
+button.sell {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
 }
-.stat .label {
-  display: block;
+button.buy {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+button.tiny {
+  padding: 4px 10px;
   font-size: 12px;
-  color: var(--muted);
-}
-.stat .value {
-  font-size: 19px;
 }
 
-.tag {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
+/* Segmented control, for side and chart range. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-sunk);
+}
+.segmented button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+.segmented button:hover:not(:disabled) {
+  background: var(--surface);
+  filter: none;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ---------------------------------------------------------------- *
+ * Notices
+ * ---------------------------------------------------------------- */
+
+.notice {
+  padding: 9px 13px;
+  border-radius: var(--radius);
+  border-left: 3px solid;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.notice.err {
+  background: var(--down-soft);
+  border-color: var(--down);
+  color: var(--down);
+}
+.notice.ok {
+  background: var(--up-soft);
+  border-color: var(--up);
+  color: var(--up);
+}
+.notice.info {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+.chip.here {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- *
+ * Broadsheet - the newspaper
+ * ---------------------------------------------------------------- */
+
+.broadsheet {
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  padding: 30px 34px 34px;
+}
+.broadsheet .title {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 144;
+  font-weight: 700;
+  font-size: clamp(34px, 6vw, 58px);
+  letter-spacing: -0.02em;
+  text-align: center;
+  line-height: 1;
+  margin: 0;
+}
+.broadsheet .rules {
+  border-top: 3px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  height: 4px;
+  margin: 14px 0 0;
+}
+.broadsheet .dateline {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ink);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.broadsheet .columns {
+  columns: 2;
+  column-gap: 34px;
+  column-rule: 1px solid var(--rule);
+}
+.broadsheet .story {
+  break-inside: avoid;
+  margin: 0 0 16px;
+}
+.broadsheet .story h4 {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 60;
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 3px;
+  line-height: 1.2;
+}
+.broadsheet .story p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 640px) {
+  .broadsheet .columns {
+    columns: 1;
+  }
+  .broadsheet {
+    padding: 20px;
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * Route map
+ * ---------------------------------------------------------------- */
+
+.route {
+  position: relative;
+  padding: 10px 0 4px;
+}
+
+/* The road itself, drawn behind the stops and passing through them. */
+.route::before {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 18px;
+  height: 2px;
+  background: repeating-linear-gradient(to right, var(--rule-strong) 0 5px, transparent 5px 11px);
+}
+
+.stops {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.stop-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.stop-btn:hover:not(:disabled) {
+  filter: none;
+  transform: translateY(-2px);
+}
+.stop-btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.stop-btn:active:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.pin {
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  margin-right: 7px;
-  vertical-align: middle;
+  border: 2px solid var(--rule-strong);
+  background: var(--surface);
+  flex: none;
+  transition: all 0.18s ease;
+}
+.stop.is-here .pin {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+.stop.is-target .pin {
+  border-color: var(--gold);
+  background: var(--gold);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+.stop-btn:hover:not(:disabled) .pin {
+  border-color: var(--accent);
+}
+
+.stop-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .route::before {
+    display: none;
+  }
+  .stops {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * Misc
+ * ---------------------------------------------------------------- */
+
+.spark {
+  display: block;
+}
+
+.empty {
+  text-align: center;
+  padding: 44px 20px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  padding: 5px 9px;
+  font-size: 13px;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  background: var(--surface-sunk);
+  filter: none;
+}
+
+.scroller {
+  overflow-x: auto;
+}
+
+hr.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 22px 0;
 }
