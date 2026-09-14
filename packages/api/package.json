@@ -8,7 +8,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "seed": "node src/scripts/seed.js",
-    "rebuild": "node src/scripts/rebuild.js"
+    "rebuild": "node src/scripts/rebuild.js",
+    "reset:market": "node src/scripts/reset-market.js"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",

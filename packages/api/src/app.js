@@ -9,6 +9,8 @@ import { leaderboardRouter } from './routes/leaderboard.js';
 import { playersRouter } from './routes/players.js';
 import { issueRouter } from './routes/issue.js';
 import { newspaperRouter } from './routes/newspaper.js';
+import { shortsRouter } from './routes/shorts.js';
+import { eventsRouter } from './routes/events.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -64,6 +66,8 @@ export function createApp() {
   app.use('/players', playersRouter);
   app.use('/issue', issueRouter);
   app.use('/newspaper', newspaperRouter);
+  app.use('/shorts', shortsRouter);
+  app.use('/events', eventsRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });

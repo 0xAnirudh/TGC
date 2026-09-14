@@ -68,6 +68,24 @@ const schema = z.object({
    * Production slows both down. See docs/DEPLOYMENT.md for the maths.
    */
   DRIFT_CRON: z.string().default('* * * * *'),
+
+  /**
+   * How often bots trade and events fire, in seconds.
+   *
+   * Seconds rather than cron, because cron cannot express anything
+   * faster than a minute and a minute is far too slow. The market
+   * felt dead at the old cadence: prices moved once a minute and
+   * nothing else ever happened, so there was nothing to watch and
+   * nothing to react to.
+   *
+   * Hosted Redis is billed per command, so production runs these
+   * slower - see docs/DEPLOYMENT.md.
+   */
+  BOT_INTERVAL_SEC: z.coerce.number().int().min(2).max(600).default(6),
+  EVENT_INTERVAL_SEC: z.coerce.number().int().min(5).max(3_600).default(45),
+
+  /** Drift, also in seconds. Same reasoning. */
+  DRIFT_INTERVAL_SEC: z.coerce.number().int().min(2).max(600).default(10),
   REVALUE_CRON: z.string().default('*/2 * * * *'),
   NEWSPAPER_CRON: z.string().default('0 * * * *'),
 

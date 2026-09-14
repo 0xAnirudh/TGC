@@ -376,11 +376,25 @@ export async function getPortfolio(userId) {
     };
   });
 
+  const { openShorts } = await import('./shorting.js');
+  const shorts = await openShorts(userId);
+
+  // A short's contribution to net worth is what closing it would return
+  // right now, since that is what the player would actually have.
+  const shortsValue = shorts.reduce(
+    (sum, s) => sum + Math.max(0, s.proceeds + s.collateral - s.costToClose),
+    0,
+  );
+
   return {
     cash,
     holdingsValue,
-    netWorth: cash + holdingsValue,
-    unrealizedPL: rows.reduce((sum, r) => sum + r.unrealizedPL, 0),
+    shortsValue,
+    netWorth: cash + holdingsValue + shortsValue,
+    unrealizedPL:
+      rows.reduce((sum, r) => sum + r.unrealizedPL, 0) +
+      shorts.reduce((sum, s) => sum + s.unrealizedPL, 0),
     holdings: rows,
+    shorts,
   };
 }

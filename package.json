@@ -21,7 +21,8 @@
     "dev:jobs": "npm run dev --workspace=@tgc/jobs",
     "dev:web": "npm run dev --workspace=@tgc/web",
     "seed": "npm run seed --workspace=@tgc/api",
-    "rebuild": "npm run rebuild --workspace=@tgc/api"
+    "rebuild": "npm run rebuild --workspace=@tgc/api",
+    "reset": "npm run reset:market --workspace=@tgc/api"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

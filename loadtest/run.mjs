@@ -230,6 +230,18 @@ async function main() {
     `\n  ${discrepancy === 0 ? 'INVARIANT HOLDS' : 'INVARIANT VIOLATED'} after ${accepted} trades\n`,
   );
 
+  // Remove the accounts this run created. They hold fifty times a normal
+  // grant purely to keep the generator from running out of cash, so
+  // leaving them behind makes the leaderboard meaningless - which is
+  // exactly what happened the first few times this was run.
+  const created = await User.find({ usernameLower: new RegExp(`^lt_${stamp}_`) }).lean();
+  for (const u of created) {
+    await redis.del(userCash(u._id.toString()), `user:${u._id}:holdings`);
+    await redis.decrby(ECON_GRANTED, u.startingGrant);
+  }
+  await User.deleteMany({ _id: { $in: created.map((u) => u._id) } });
+  console.log(`  cleaned up ${created.length} load-test accounts\n`);
+
   await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
   process.exit(discrepancy === 0 ? 0 : 1);
 }

@@ -64,6 +64,26 @@ const userSchema = new mongoose.Schema(
     portfolioPublic: { type: Boolean, default: true },
 
     lastBonusAt: { type: Date, default: null },
+
+    /**
+     * Bot traders.
+     *
+     * They are ordinary Users - same cash, same holdings, same curve,
+     * same rules - because the alternative is a parallel code path that
+     * can drift away from the real one and stop being a fair test of it.
+     * A bot that cannot afford a trade is refused exactly like a person.
+     *
+     * The flag exists so they can be told apart on the leaderboard and
+     * excluded from anything that should only count humans.
+     */
+    isBot: { type: Boolean, default: false, index: true },
+
+    /** Which algorithm drives this bot. Null for people. */
+    botStrategy: {
+      type: String,
+      enum: ['momentum', 'contrarian', 'whale', 'jitter', 'dipBuyer', 'fader', null],
+      default: null,
+    },
   },
   {
     timestamps: true,
