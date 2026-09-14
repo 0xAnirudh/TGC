@@ -7,7 +7,7 @@ import { colorFor, notes, money, Price, Figure, Notice, Meter } from '../ui/inde
 
 const RANGES = ['1h', '24h', '7d', '30d'];
 
-export default function GoodDetail({ auth }) {
+export default function GoodDetail({ auth, onTraded }) {
   const { id } = useParams();
   const [good, setGood] = useState(null);
   const [history, setHistory] = useState([]);
@@ -227,8 +227,24 @@ export default function GoodDetail({ auth }) {
       )}
 
       <div className="grid two">
-        <TradePanel good={good} auth={auth} onDone={load} />
-        {auth.user && <ShortPanel good={good} auth={auth} onDone={load} />}
+        <TradePanel
+          good={good}
+          auth={auth}
+          onDone={() => {
+            load();
+            onTraded?.();
+          }}
+        />
+        {auth.user && (
+          <ShortPanel
+            good={good}
+            auth={auth}
+            onDone={() => {
+              load();
+              onTraded?.();
+            }}
+          />
+        )}
       </div>
     </>
   );

@@ -12,22 +12,20 @@ import { colorFor, notes, Price, Sparkline, GapBar, Notice, shortRegion } from '
  * market is the entire decision, and burying it behind four page loads
  * would hide the only number worth looking at.
  */
-export default function Market({ auth }) {
+export default function Market({ auth, travelling }) {
   const [goods, setGoods] = useState(null);
   const [region, setRegion] = useState(null);
   const [regions, setRegions] = useState([]);
-  const [events, setEvents] = useState([]);
   const [history, setHistory] = useState({});
   const [error, setError] = useState(null);
   const live = useLivePrices();
 
   useEffect(() => {
-    Promise.all([api('/goods'), api('/world/regions'), api('/events?limit=3')])
-      .then(([g, r, e]) => {
+    Promise.all([api('/goods'), api('/world/regions')])
+      .then(([g, r]) => {
         setGoods(g.goods);
         setRegion(g.region);
         setRegions(r.regions);
-        setEvents(e.events);
 
         // Sparklines are fetched after the table is already on screen.
         // A shape in a cell is worth having, but not worth making the
@@ -55,36 +53,14 @@ export default function Market({ auth }) {
   return (
     <>
       <div className="page-head">
-        <div className="kicker">{here ? 'Market at' : 'Market'}</div>
+        <div className="kicker">Prices at</div>
         <h2>{here ? here.name : 'The market'}</h2>
         <p className="lede">
-          {here?.blurb} Prices come from a curve, not from other traders — buying pushes one up,
-          selling pushes it down. The same good is worth different amounts in each of the four
-          markets, and that gap is the whole game. <Link to="/travel">See the road.</Link>
+          {travelling
+            ? 'You are on the road. These are the prices where you left, not where you are going.'
+            : 'The last column is the decision: what this fetches in the best other market, and how much more that is. Widest first.'}
         </p>
       </div>
-
-      {events.length > 0 && (
-        <div className="card tight" style={{ marginBottom: 16 }}>
-          <div className="label" style={{ marginBottom: 7 }}>
-            Word from the road
-          </div>
-          {events.map((e) => {
-            const rose = e.priceAfter > e.priceBefore;
-            return (
-              <div
-                key={e._id}
-                style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 3 }}
-              >
-                <span style={{ flex: 1 }}>{e.headline}</span>
-                <span className={`num small ${rose ? 'up' : 'down'}`}>
-                  {rose ? '▲' : '▼'} {Math.abs(Math.round((e.impactBps / 100) * 10) / 10)}%
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       <div className="scroller">
         <table className="ledger">

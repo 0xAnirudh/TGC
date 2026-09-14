@@ -10,7 +10,7 @@ import { notes, Figure, Meter, Notice } from '../ui/index.jsx';
  * accrues invisibly is a trap, not a decision, and the whole point of a
  * loan is that you can see it growing and choose to race it.
  */
-export default function Bank({ auth }) {
+export default function Bank({ auth, onChanged }) {
   const [loans, setLoans] = useState(null);
   const [cargo, setCargo] = useState(null);
   const [amount, setAmount] = useState(20_000);
@@ -41,6 +41,7 @@ export default function Bank({ auth }) {
       setMsg(label(res));
       await auth.refresh();
       await load();
+      onChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
