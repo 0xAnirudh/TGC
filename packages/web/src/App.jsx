@@ -9,6 +9,8 @@ import Newspaper from './pages/Newspaper.jsx';
 import Profile from './pages/Profile.jsx';
 import Issue from './pages/Issue.jsx';
 import Login from './pages/Login.jsx';
+import Travel from './pages/Travel.jsx';
+import Bank from './pages/Bank.jsx';
 
 export default function App() {
   const auth = useAuth();
@@ -30,7 +32,9 @@ export default function App() {
           <Link to="/">Market</Link>
           <Link to="/leaderboard">Leaderboard</Link>
           <Link to="/newspaper">Newspaper</Link>
+          {auth.user && <Link to="/travel">Travel</Link>}
           {auth.user && <Link to="/portfolio">Portfolio</Link>}
+          {auth.user && <Link to="/bank">Bank</Link>}
           {auth.user && <Link to="/issue">Issue</Link>}
         </nav>
         <span className="spacer" />
@@ -38,6 +42,12 @@ export default function App() {
           <>
             <span className="muted">
               {auth.user.username} · <span className="num">{notes(auth.user.cash)}</span> Notes
+              {auth.user.debt > 0 && (
+                <>
+                  {' · '}
+                  <span className="down num">owes {notes(auth.user.debt)}</span>
+                </>
+              )}
               {auth.user.rank ? ` · rank ${auth.user.rank}` : ''}
             </span>
             <button
@@ -70,6 +80,14 @@ export default function App() {
           <Route
             path="/issue"
             element={auth.user ? <Issue auth={auth} /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/travel"
+            element={auth.user ? <Travel auth={auth} /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/bank"
+            element={auth.user ? <Bank auth={auth} /> : <Navigate to="/login" replace />}
           />
           <Route path="*" element={<p>Nothing here.</p>} />
         </Routes>

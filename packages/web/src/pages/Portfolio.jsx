@@ -35,11 +35,28 @@ export default function Portfolio({ auth }) {
     <>
       <h2>Portfolio</h2>
 
+      <p className="muted">
+        You are in <strong>{data.region}</strong>. Everything below is valued at what it would fetch
+        here — the same cargo is worth more somewhere else, which is the point of moving it.
+      </p>
+
       <div className="panel">
         <span className="stat">
           <span className="label">Cash</span>
           <span className="value num">{notes(data.cash)}</span>
         </span>
+        <span className="stat">
+          <span className="label">Hold</span>
+          <span className="value num">
+            {notes(data.cargo.used)} / {notes(data.cargo.capacity)}
+          </span>
+        </span>
+        {data.debt > 0 && (
+          <span className="stat">
+            <span className="label">Owed</span>
+            <span className="value num down">{notes(data.debt)}</span>
+          </span>
+        )}
         <span className="stat">
           <span className="label">Holdings</span>
           <span className="value num">{notes(data.holdingsValue)}</span>
@@ -72,6 +89,43 @@ export default function Portfolio({ auth }) {
         Holdings are valued at what selling them right now would actually return — spread taken and
         the curve walked back down — not at the displayed price times quantity.
       </p>
+
+      {data.shorts && data.shorts.length > 0 && (
+        <>
+          <h3>Shorts</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Good</th>
+                <th className="r">Units</th>
+                <th className="r">Entry</th>
+                <th className="r">Now</th>
+                <th className="r">Forced out at</th>
+                <th className="r">P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.shorts.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <Link to={`/goods/${s.goodId}`}>{s.name}</Link>
+                    <span className="muted"> · {s.region}</span>
+                  </td>
+                  <td className="r num">{notes(s.quantity)}</td>
+                  <td className="r num">{s.entryPrice}</td>
+                  <td className="r num">{s.currentPrice}</td>
+                  <td className="r num down">{s.liquidationPrice}</td>
+                  <td className={`r num ${s.unrealizedPL >= 0 ? 'up' : 'down'}`}>
+                    {s.unrealizedPL >= 0 ? '+' : ''}
+                    {notes(s.unrealizedPL)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <h3>Cargo</h3>
+        </>
+      )}
 
       {data.holdings.length === 0 ? (
         <p className="muted">

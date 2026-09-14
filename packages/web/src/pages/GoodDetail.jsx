@@ -46,7 +46,7 @@ export default function GoodDetail({ auth }) {
 
       <div className="panel">
         <span className="stat">
-          <span className="label">Price</span>
+          <span className="label">Price here</span>
           <span className="value num">{price.toFixed(2)}</span>
         </span>
         <span className="stat">
@@ -60,6 +60,32 @@ export default function GoodDetail({ auth }) {
           </span>
         </span>
       </div>
+
+      {good.across && good.across.length > 1 && (
+        <div className="panel">
+          <strong style={{ fontSize: 13 }}>What it costs in each market</strong>
+          <table style={{ marginTop: 8 }}>
+            <tbody>
+              {good.across.map((r) => {
+                const diff = ((r.price - price) / price) * 100;
+                return (
+                  <tr key={r.region}>
+                    <td>
+                      {r.name}
+                      {r.region === good.region && <span className="muted"> · here</span>}
+                    </td>
+                    <td className="r num">{r.price.toFixed(2)}</td>
+                    <td className={`r num ${diff > 0 ? 'up' : diff < 0 ? 'down' : 'muted'}`}>
+                      {r.region === good.region ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`}
+                    </td>
+                    <td className="r num muted">{notes(r.supply)} in stock</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div style={{ marginBottom: 8 }}>
         {['1h', '24h', '7d', '30d'].map((r) => (
@@ -111,7 +137,122 @@ export default function GoodDetail({ auth }) {
       )}
 
       <TradePanel good={good} auth={auth} onDone={load} />
+      {auth.user && <ShortPanel good={good} auth={auth} onDone={load} />}
     </>
+  );
+}
+
+/**
+ * Short selling.
+ *
+ * Kept on its own panel rather than folded into the trade form, because
+ * it is a different kind of bet and the collateral rules need saying
+ * before anyone commits to one.
+ */
+function ShortPanel({ good, auth, onDone }) {
+  const [qty, setQty] = useState(100);
+  const [rules, setRules] = useState(null);
+  const [open, setOpen] = useState([]);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () =>
+    Promise.all([api('/shorts/rules'), api('/shorts')])
+      .then(([r, p]) => {
+        setRules(r);
+        setOpen(p.positions.filter((x) => x.goodId === good.id));
+      })
+      .catch((e) => setError(e.message));
+
+  useEffect(() => {
+    load();
+  }, [good.id]);
+
+  async function act(fn) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await auth.refresh();
+      load();
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!rules) return null;
+
+  return (
+    <div className="panel">
+      <h3 style={{ marginTop: 0 }}>Bet against it</h3>
+      <p className="muted">{rules.explanation}</p>
+
+      {open.length > 0 && (
+        <table style={{ marginBottom: 12 }}>
+          <thead>
+            <tr>
+              <th className="r">Units</th>
+              <th className="r">Entry</th>
+              <th className="r">Now</th>
+              <th className="r">Forced out at</th>
+              <th className="r">P/L</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {open.map((p) => (
+              <tr key={p.id}>
+                <td className="r num">{notes(p.quantity)}</td>
+                <td className="r num">{p.entryPrice}</td>
+                <td className="r num">{p.currentPrice}</td>
+                <td className="r num down">{p.liquidationPrice}</td>
+                <td className={`r num ${p.unrealizedPL >= 0 ? 'up' : 'down'}`}>
+                  {p.unrealizedPL >= 0 ? '+' : ''}
+                  {notes(p.unrealizedPL)}
+                </td>
+                <td className="r">
+                  <button
+                    className="plain"
+                    disabled={busy}
+                    onClick={() => act(() => api(`/shorts/${p.id}/close`, { method: 'POST' }))}
+                  >
+                    Close
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="row">
+        <div className="col" style={{ maxWidth: 200 }}>
+          <label>Units to short</label>
+          <input
+            type="number"
+            min="1"
+            value={qty}
+            onChange={(e) => setQty(Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      {error && <p className="err">{error}</p>}
+
+      <p style={{ marginTop: 12 }}>
+        <button
+          disabled={busy || qty < 1}
+          onClick={() =>
+            act(() => api('/shorts', { method: 'POST', body: { goodId: good.id, qty } }))
+          }
+        >
+          {busy ? 'Working…' : `Short ${qty}`}
+        </button>
+      </p>
+    </div>
   );
 }
 
