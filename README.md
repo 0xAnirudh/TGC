@@ -1,176 +1,108 @@
-# General Company
+# The Haul
 
-A player-driven virtual economy. Players trade goods whose prices move on
-a bonding curve and issue their own goods into a single global market.
+A trading game. Thirty days, six towns, and a debt that grows while you
+sleep.
 
-The engineering substance is a concurrent, transactional market engine
-built on Redis and MongoDB:
+You open owing **5,000 Notes** against **2,000** in hand, at 7% a day
+compounding. Every town reprices every good every day, and you only see
+prices where you are standing. Travelling costs a day. The cart holds a
+hundred units. On the last day the cart is sold, the debt is settled,
+and whatever is left is your score.
 
-- Trades execute atomically inside a Redis Lua script, so concurrent
-  trades on the same good cannot interleave.
-- The durable ledger is a Redis stream. A relay worker projects it into
-  MongoDB, so Mongo is a projection rather than a second source of truth
-  and there is no dual write to diverge.
-- Market state is fully reconstructable from that ledger. Flushing Redis
-  and rebuilding reproduces supply and balances exactly.
-- The money supply is conserved by construction and asserted by test.
+Then you go again. A run takes about three minutes.
 
-## Status
+```bash
+npm install
+npm run dev        # api on :4000, web on :5173
+```
 
-In development, built in phases. See
-[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the full
-build plan, the requirements analysis, and the record of what was
-deliberately deferred to later versions, and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the decision log.
+Needs MongoDB and Redis. Copy `.env.example` to `.env` and fill in
+`MONGO_URI`, `REDIS_URL` and `JWT_SECRET`.
 
-**New here?** [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) explains what
-the system does in plain language, for someone who knows MERN but has not
-used Redis for more than caching.
+---
 
-| Phase | | |
-|---|---|---|
-| 0 | Economy simulation | done — `v0.1-simulation` |
-| 1 | Project scaffold | done — verified against Atlas + Redis |
-| 2 | Auth and users | done |
-| 3 | Goods and quotes | done |
-| 4 | Trading, sequential | done |
-| 5 | Atomicity (Redis Lua) | done — `v0.5-atomic` |
-| 6 | Durability (stream, relay, rebuild) | done |
-| 7 | Rate limiting | done |
-| 8 | Drift and price history | done |
-| 9 | Real-time (WebSockets) | done |
-| 10 | Leaderboard and profiles | done |
-| 11 | Issuing goods | done |
-| 12 | Newspaper | done |
-| 13 | Frontend | done — **playable** |
-| 14 | Load testing | done |
-| 15 | Deployment | config ready — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+## What is interesting about it
+
+**Prices are a pure function of the run's seed.** Nothing is stored and
+nothing is random at request time - a price is derived from the seed, the
+day and the town. So a finished run can be **replayed from its action log
+and its score recomputed**, which is what makes the leaderboard something
+other than a list of numbers clients reported about themselves.
+
+The seed is generated server-side and never sent to a live run. Knowing
+it would mean computing every future price in every town, which is the
+one thing the game exists to withhold.
+
+**Every action goes through a single Redis Lua script.** Read the run,
+decide against it, write it back - done in JavaScript, a double-clicked
+buy reads the same opening balance twice and spends it twice. Redis runs
+a script start to finish with nothing interleaved, so the second click
+sees what the first one left.
+
+**Buying in bulk moves the price against you.** Filling a cart costs
+about a fifth more per unit than a token purchase, so a big score needs
+more than one good day.
+
+---
 
 ## Layout
 
 ```
-packages/shared/   curve math and economic constants
-sim/               Phase 0 economy simulation (no server)
-tests/unit/        pure-function tests
-tests/invariant/   economic invariant tests
-docs/              implementation plan, architecture decision log
+packages/shared/src/haul.js   the world: towns, goods, prices, debt
+packages/api/src/lua/haul.lua one action, applied atomically
+packages/api/src/services/    run lifecycle and road events
+packages/web/src/haul/        the game screen
+tests/                        89 tests
 ```
-
-## Running
 
 ```bash
-# 1. stores
-docker compose up -d                 # or: brew services start redis
-                                     # (and point MONGO_URI at Atlas)
-
-# 2. configure
-cp .env.example .env                 # fill in MONGO_URI and JWT_SECRET
-npm install
-npm run seed --workspace=@tgc/api    # create the starting market
-
-# 3. run everything
-npm run dev
+npm test           # everything
+npm run lint
 ```
 
-That starts all four processes in one terminal with coloured prefixes:
+---
 
-```
-[api]    the API                        :4000
-[relay]  trade stream -> mongo          (no port)
-[jobs]   drift, leaderboard, newspaper  (no port)
-[web]    the frontend                   :5173
-```
+## Tuning, and what the playtests said
 
-To run one at a time instead: `npm run dev:api`, `dev:relay`,
-`dev:jobs`, `dev:web`.
+Numbers in a game like this are the design, and the first guesses were
+wrong twice over.
 
-Then open <http://localhost:5173>, create an account, and trade. You
-start with 100,000 Notes.
+**The first price spread was absurd.** Saffron ranged from 31 to 172,000
+and day five offered a 28,000% trade. One lucky roll decided the run and
+skill stopped mattering. Swings and shocks came down until a good sits
+within two or three times its base and rarely five.
 
-**The API alone is enough to trade**, but without the relay nothing
-reaches MongoDB, and without the job runner prices never drift, the
-leaderboard stays empty and no newspaper is printed.
+**The first debt was unbeatable.** 12% a day compounds to thirty times
+over a run - 5,000 becomes 150,000 - so clearing it meant turning a 2,000
+stake into seventy-five times itself. Every playtest ended ruined. At 7%
+it compounds to seven and a half, and three bot strategies now finish:
 
-### In VS Code
-
-`.vscode/` is committed, so opening the folder gives you:
-
-- **Run and Debug → "Debug: full backend"** — API, relay and jobs under
-  one debugger. Put a breakpoint in `packages/api/src/services/trading.js`
-  and place a trade from the browser to watch a request go through.
-- **Run and Debug → "Debug: tests"** — step through a failing assertion
-  instead of guessing at it.
-- **Terminal → Run Task** — run everything, seed, rebuild, test, load
-  test.
-
-The frontend is not in the debug compound on purpose; React is better
-debugged in the browser's own devtools.
-
-`GET /health` is readiness: it checks both stores and answers 503 while
-either is down, naming which one. `GET /health/live` is liveness and
-never touches a store.
-
-Other commands:
-
-```bash
-npm run sim      # run the economy simulation
-npm test         # run the test suite
-npm run lint     # eslint
-npm run format   # prettier
-```
-
-The simulation takes flags: `npm run sim -- --trades=50000 --seed=7
---players=500`. It is seeded, so a run that fails is a run you can
-reproduce.
-
-## Benchmarks
-
-Measured with `npm run loadtest`, against the API on a local machine with
-MongoDB on Atlas and Redis local. 40 accounts, 8 goods, 20 concurrent
-users, 1,500 quotes and 600 trades.
-
-| Path | p50 | p95 | p99 | Target |
-|---|---|---|---|---|
-| `GET /goods/:id/quote` | 2.94ms | **8.69ms** | 11.64ms | NFR-1: p95 < 10ms |
-| `POST /trades` | 6.25ms | **12.35ms** | 14.06ms | NFR-2: p95 < 50ms |
-
-The money-supply invariant balanced to the exact Note after the run.
-
-Latency at other concurrency levels, same hardware:
-
-| Concurrent users | quote p95 | trade p95 |
+| strategy | score | peak debt |
 |---|---|---|
-| 1 | 3.27ms | 3.28ms |
-| 5 | 3.15ms | 4.51ms |
-| 20 | 8.69ms | 12.35ms |
+| never repays | 124,440 | 35,603 |
+| repays early | 191,099 | 5,350 |
+| patient buyer | 315,901 | 11,267 |
 
-**Methodology, and one thing worth knowing.** The first version of this
-load test fired every request at once with `Promise.all` and reported a
-quote p95 of **12.8 seconds**. That number measured nothing but how long
-1,500 requests take to queue through a single Node process - latency
-under a stampede is queueing time, not service time. The test now holds
-concurrency fixed at a set number of virtual users, which is what the
-figures above describe.
+That spread is the game: the same thirty days, two and a half times the
+result.
 
-It also found a real defect: quote p95 was 827ms against a p50 of 42ms,
-and the entire tail was one Atlas round trip. Both the quote and trade
-paths were calling `Good.findById` for the curve parameters, so NFR-1's
-"no Mongo round trip on the hot path" was not actually true. `k` and `n`
-never change after a good is created, so they are now cached in Redis -
-which is what took quote p95 from 827ms to 8.69ms.
+**The hash was quietly biased.** FNV-1a alone left 8.6% more values in
+some tenths of the range than others - small enough never to notice,
+large enough to make certain goods cheaper than intended. A murmur3
+finaliser flattens it to 3%.
 
-## Phase 0 result
+---
 
-The curve math is proven exploit-free before any infrastructure depends
-on it. A default run of 10,000 trades across 200 players and 8 goods:
+## History
 
-- round trips are lossy in all 1,500 parameter combinations tested, and
-  chunking a round trip loses more rather than less
-- the money supply balances to the exact Note - `granted == cash +
-  reserve + burned` - at every checkpoint and across six seeds
-- prices plateau between roughly 2x and 5x rather than diverging
-- rounding dust accumulates in the curve reserve at 0.4958 Notes per
-  trade, always positive, always inside the invariant
+This repo previously held a different game: a persistent shared market
+with a bonding curve, atomic Lua trades, a Redis-stream ledger with a
+relay worker, regions, shipping, short selling, player-issued goods and
+NPC traders. It was interesting to build and dull to play - no clock, no
+score, and prices that drifted a percent an hour.
 
-Details, including the reasoning behind each decision, are in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The engineering survived the rewrite in a better form. The money-supply
+invariant guarded a shared economy this game no longer has; the
+replay-determinism property guards a leaderboard, which is the thing
+players would actually lie about. The old design and the reasoning behind
+it are in the git history from `v0.1-simulation` to `v1.0`.

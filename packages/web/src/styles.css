@@ -866,573 +866,467 @@ hr.rule {
 }
 
 /* ================================================================ *
- * THE BOARD
+ * THE HAUL
  *
- * Three panes that stay put: figures on the left, the map top right,
- * the ledger beneath it. Only the left pane changes.
- *
- * The reason is not tidiness. Deciding whether to carry Silk to the
- * frontier means holding a price, a fare and a piece of news in mind at
- * once, and a page-per-screen layout makes you carry two of those three
- * in your head while you navigate to the third.
+ * A run is one continuous decision, so it is one screen. The day, the
+ * purse and the debt sit across the top where they cannot be avoided -
+ * the debt especially, because the whole game is a race against it.
  * ================================================================ */
 
 :root {
-  /* Deeper than the page, so the map reads as a distinct object rather
-     than a pale patch of the same paper. */
   --map-land: #e7dcc2;
   --map-sea: #9db6c2;
-  --map-sea-line: #6f8d9a;
-  --map-ink: #5d4f38;
   --map-road: #7a6343;
-  --map-road-bed: #d8c8a5;
-  --hud-h: 56px;
 }
-
 [data-theme='dark'] {
   --map-land: #1d1a15;
   --map-sea: #1d2c33;
-  --map-sea-line: #2f4a54;
-  --map-ink: #7e7259;
   --map-road: #8d7a56;
-  --map-road-bed: #262119;
 }
 
-html:has(.board),
-body:has(.board) {
-  background-image: none;
-  height: 100%;
-  overflow: hidden;
+.game,
+.signin {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 22px 60px;
 }
 
-.board {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.hud {
-  height: var(--hud-h);
-  flex: none;
+.game-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 18px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--rule-strong);
-  z-index: 10;
+  gap: 12px;
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 20px;
 }
-
-.avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--surface-sunk);
-  border: 1px solid var(--rule-strong);
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  flex: none;
+.game-bar .wordmark {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 110;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.015em;
 }
-
-.panes {
+.flex {
   flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 430px;
-  /*
-   * The row has to be pinned.
-   *
-   * A grid's implicit row sizes to its tallest content, so without this
-   * both panes grew to fit everything inside them - 1177px against an
-   * 860px window - and the whole board scrolled instead of the pane that
-   * was supposed to. min-height: 0 on the children is necessary and not
-   * sufficient; the row itself needs the constraint.
-   */
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.pane-left {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 22px 24px 60px;
-  /* The ruled paper lives here rather than on the body, so the map and
-     ledger sit on plain ground. */
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0 31px,
-    color-mix(in srgb, var(--rule) 26%, transparent) 31px 32px
-  );
-}
-
-.pane-right {
-  min-width: 0;
-  min-height: 0;
-  border-left: 1px solid var(--rule-strong);
-  background: var(--surface);
-  display: grid;
-  grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr);
 }
 
 /* ---------------------------------------------------------------- *
- * Map
+ * The bar: day, purse, debt, cart
  * ---------------------------------------------------------------- */
 
-.map-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-bottom: 1px solid var(--rule-strong);
-}
-
-.map-head {
-  flex: none;
+.run-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--rule);
-}
-.map-where {
-  font-family: var(--font-display);
-  font-variation-settings: 'opsz' 40;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.2;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
 }
 
-.map {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  /*
-   * The same land colour the SVG paints, so the letterboxing either side
-   * of the portrait map reads as more countryside rather than as a grey
-   * bar where the drawing ran out.
-   */
-  background: var(--map-land);
+.day {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 0 7px;
+  flex: none;
 }
-.map-svg {
+.day-n {
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.day-of {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+/* How much run is left, which every decision is weighed against. */
+.day-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  width: 100%;
+  background: var(--surface-sunk);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 7px;
+}
+.day-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.tally {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.tally-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 88px;
+}
+.tally-item .v {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.tally-item .sub {
+  font-size: 10.5px;
+  margin-top: 1px;
+}
+.meter.tiny {
+  height: 4px;
+  margin-top: 5px;
+  border: 0;
+  background: var(--surface-sunk);
+}
+.meter.tiny span {
+  background: var(--gold);
+}
+
+/* ---------------------------------------------------------------- *
+ * Panes
+ * ---------------------------------------------------------------- */
+
+.run-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 18px;
+  align-items: start;
+}
+
+.town-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.town-head h2 {
+  font-size: 27px;
+  margin: 2px 0 2px;
+}
+.town-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- *
+ * The price board
+ * ---------------------------------------------------------------- */
+
+.prices td {
+  padding: 9px 12px;
+}
+.price-now {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* A verdict instead of a ratio. The board should be readable at a
+   glance rather than computed. */
+.verdict {
+  display: block;
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.verdict.steal,
+.verdict.cheap {
+  color: var(--up);
+}
+.verdict.dear,
+.verdict.killing {
+  color: var(--down);
+}
+.prices tr.is-steal {
+  background: color-mix(in srgb, var(--up-soft) 60%, transparent);
+}
+.prices tr.is-killing {
+  background: color-mix(in srgb, var(--down-soft) 45%, transparent);
+}
+
+.trade-cell {
+  display: flex;
+  gap: 5px;
+  justify-content: flex-end;
+}
+.trade-cell input {
+  width: 74px;
+  padding: 4px 8px;
+  text-align: right;
+  font-size: 13px;
+}
+button.tiny.buy {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+button.tiny.sell {
+  background: transparent;
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+button.tiny.sell:hover:not(:disabled) {
+  background: var(--down-soft);
+  border-color: var(--down);
+  color: var(--down);
+  filter: none;
+}
+
+/* ---------------------------------------------------------------- *
+ * The road report
+ * ---------------------------------------------------------------- */
+
+.road-report {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border-left: 3px solid;
+  margin-bottom: 14px;
+  font-size: 14px;
+  animation: report-in 0.32s ease-out;
+}
+.road-report.bad {
+  background: var(--down-soft);
+  border-color: var(--down);
+  color: var(--down);
+}
+.road-report.good {
+  background: var(--up-soft);
+  border-color: var(--up);
+  color: var(--up);
+}
+.road-mark {
+  font-weight: 700;
+}
+@keyframes report-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * The map
+ * ---------------------------------------------------------------- */
+
+.routemap {
+  position: relative;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--map-land);
+  aspect-ratio: 360 / 440;
+}
+.routemap-svg {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.place-dot {
+.town-dot {
   fill: var(--surface);
-  stroke: var(--map-ink);
+  stroke: var(--map-road);
   stroke-width: 2;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
-.place-ring {
-  stroke: transparent;
-  stroke-width: 1.5;
-  transition: all 0.2s ease;
+.town.is-open .town-dot {
+  stroke: var(--accent);
 }
-.place:hover .place-dot {
+.town.is-open:hover .town-dot {
+  fill: var(--accent);
+  r: 8;
+}
+.town.is-here .town-dot {
   fill: var(--accent);
   stroke: var(--accent);
 }
-.place.is-here .place-dot {
-  fill: var(--accent);
-  stroke: var(--accent);
+.town.is-shut {
+  opacity: 0.42;
 }
-.place.is-here .place-ring {
-  stroke: var(--accent);
-  opacity: 0.35;
-  animation: pulse-ring 2.6s ease-out infinite;
-}
-.place.is-target .place-dot {
-  fill: var(--gold);
-  stroke: var(--gold);
-}
-.place.is-target .place-ring {
-  stroke: var(--gold);
-  opacity: 0.5;
-}
-
-@keyframes pulse-ring {
-  0% {
-    r: 9;
-    opacity: 0.5;
-  }
-  70% {
-    r: 19;
-    opacity: 0;
-  }
-  100% {
-    r: 19;
-    opacity: 0;
-  }
-}
-
-.place-label {
+.town-label {
   font-family: var(--font-ui);
   font-size: 10.5px;
   font-weight: 600;
   fill: var(--ink);
-  letter-spacing: 0.01em;
 }
-.place-fare {
+.town-go {
   font-family: var(--font-num);
-  font-size: 9px;
-  fill: var(--ink-faint);
-}
-.compass-n {
-  font-family: var(--font-display);
-  font-size: 10px;
-  fill: var(--map-ink);
+  font-size: 8.5px;
+  fill: var(--accent);
 }
 
-/* ---------------------------------------------------------------- *
- * The traveller
- * ---------------------------------------------------------------- */
-
-.traveller {
+.cart {
   position: absolute;
-  transform: translate(-50%, -78%);
+  transform: translate(-50%, -72%);
   color: var(--ink);
   pointer-events: none;
-  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.22));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
   transition:
-    left 0.25s linear,
-    top 0.25s linear;
+    left 0.42s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.traveller.is-moving {
-  /* While moving, position is set every frame - a transition would
-     fight the animation and lag the figure behind the road. */
-  transition: none;
+.cart.is-moving {
+  animation: trundle 0.42s ease-in-out;
 }
-
-/* A small bob, so a walking figure is not a sticker sliding along. */
-.traveller.is-moving .trader {
-  animation: bob 0.5s ease-in-out infinite;
-}
-.traveller.is-moving::after {
-  animation: shadow-pulse 0.5s ease-in-out infinite;
-}
-@keyframes shadow-pulse {
+@keyframes trundle {
   0%,
   100% {
-    opacity: 0.22;
-    width: 22px;
+    transform: translate(-50%, -72%);
   }
   50% {
-    opacity: 0.14;
-    width: 18px;
-  }
-}
-@keyframes bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-1.5px);
+    transform: translate(-50%, -84%);
   }
 }
 
-.trader.is-walking .leg-a {
-  animation: stride 0.5s ease-in-out infinite;
-  transform-origin: 50% 74%;
+.travel-hint,
+.finish {
+  margin-top: 12px;
 }
-.trader.is-walking .leg-b {
-  animation: stride 0.5s ease-in-out infinite reverse;
-  transform-origin: 50% 74%;
-}
-@keyframes stride {
-  0%,
-  100% {
-    transform: rotate(-16deg);
-  }
-  50% {
-    transform: rotate(16deg);
-  }
-}
-.trader.is-walking .wheel {
-  animation: roll 0.8s linear infinite;
-  transform-origin: center;
-  transform-box: fill-box;
-}
-@keyframes roll {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.travel-progress {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--rule);
+.finish {
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
-  padding: 7px 11px;
-  backdrop-filter: blur(3px);
 }
-.travel-progress-bar {
-  flex: 1;
-  height: 5px;
-  background: var(--surface-sunk);
-  border-radius: 3px;
-  overflow: hidden;
+.finish button {
+  width: 100%;
+  margin-top: 8px;
 }
-.travel-progress-bar span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
+.give-up {
+  margin-top: 12px;
+  opacity: 0.55;
 }
-
-.depart {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 16px;
-  border-top: 1px solid var(--rule);
-  background: var(--surface-sunk);
-}
-.depart-name {
-  font-weight: 600;
-  font-size: 13.5px;
-}
-.depart-facts {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.25;
-  margin-left: auto;
+.give-up:hover {
+  opacity: 1;
 }
 
 /* ---------------------------------------------------------------- *
- * Ledger panel
+ * Start, result, board
  * ---------------------------------------------------------------- */
 
-.ledger-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.start {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 30px;
+  align-items: start;
+  padding-top: 14px;
 }
-.ledger-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--rule);
-}
-.segmented.small button {
-  padding: 4px 12px;
-  font-size: 12px;
-}
-.pip {
-  display: inline-block;
-  margin-left: 6px;
-  min-width: 15px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--gold);
-  color: var(--surface);
-  font-size: 10px;
+.start-pitch h1 {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 120;
+  font-size: clamp(30px, 4.4vw, 46px);
   font-weight: 700;
-  line-height: 15px;
-  text-align: center;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  margin: 0 0 14px;
+}
+.start-pitch .lede {
+  max-width: 58ch;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+button.big {
+  font-size: 15.5px;
+  padding: 12px 28px;
+  margin: 18px 0 10px;
 }
 
-.wire {
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
+.settle {
+  max-width: 380px;
+  margin: 16px 0;
 }
-.wire-item {
-  display: flex;
-  gap: 10px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--rule);
+.settle td {
+  padding: 8px 12px;
 }
-.wire-item:last-child {
+.settle tr.total td {
+  border-top: 2px solid var(--ink);
   border-bottom: 0;
-}
-.wire-mark {
-  font-size: 10px;
-  line-height: 18px;
-  flex: none;
-}
-.wire-text {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-.wire-sub {
-  margin: 1px 0 0;
-  font-size: 11px;
-  color: var(--ink-faint);
+  font-weight: 600;
+  font-size: 17px;
+  padding-top: 10px;
 }
 
-/* ---------------------------------------------------------------- *
- * The paper, unfolding
- *
- * The one flourish in the interface that exists purely for pleasure.
- * The sheet unfolds from its crease along the top edge.
- * ---------------------------------------------------------------- */
-
-.paper {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  perspective: 1100px;
-  padding: 14px;
-}
-.paper-inner {
+.board-panel {
   background: var(--surface);
   border: 1px solid var(--rule);
-  padding: 16px 18px 18px;
-  transform-origin: top center;
-  transform: rotateX(-88deg);
-  opacity: 0;
+  border-radius: var(--radius);
+  padding: 14px 16px;
 }
-.paper.is-open .paper-inner {
-  animation: unfold 0.62s cubic-bezier(0.18, 0.9, 0.28, 1.02) forwards;
+.board-panel h3 {
+  margin-top: 0;
 }
-@keyframes unfold {
-  0% {
-    transform: rotateX(-88deg);
-    opacity: 0;
-  }
-  62% {
-    transform: rotateX(7deg);
-    opacity: 1;
-  }
-  100% {
-    transform: rotateX(0deg);
-    opacity: 1;
-  }
+.board-panel .ledger {
+  border: 0;
 }
-/* The stories arrive just behind the sheet, so the page has something
-   to reveal rather than appearing already full. */
-.paper.is-open .paper-story,
-.paper.is-open .paper-masthead {
-  animation: ink-in 0.4s ease-out backwards;
-}
-.paper.is-open .paper-masthead {
-  animation-delay: 0.26s;
-}
-.paper.is-open .paper-story:nth-child(2) {
-  animation-delay: 0.34s;
-}
-.paper.is-open .paper-story:nth-child(3) {
-  animation-delay: 0.4s;
-}
-.paper.is-open .paper-story:nth-child(4) {
-  animation-delay: 0.46s;
-}
-.paper.is-open .paper-story:nth-child(5) {
-  animation-delay: 0.52s;
-}
-@keyframes ink-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.paper-masthead {
-  text-align: center;
-  margin-bottom: 12px;
-}
-.paper-title {
-  display: block;
-  font-family: var(--font-display);
-  font-variation-settings: 'opsz' 144;
-  font-weight: 700;
-  font-size: 25px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.paper-rule {
-  display: block;
-  border-top: 2px solid var(--ink);
-  border-bottom: 1px solid var(--ink);
-  height: 3px;
-  margin: 7px 0 5px;
-}
-.paper-dateline {
-  display: block;
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.paper-story {
-  border-bottom: 1px solid var(--rule);
-  padding: 9px 0;
-}
-.paper-story:last-child {
-  border-bottom: 0;
-}
-.paper-story h4 {
-  font-family: var(--font-display);
-  font-variation-settings: 'opsz' 50;
-  font-size: 14.5px;
-  font-weight: 600;
-  line-height: 1.28;
-  margin: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .paper-inner,
-  .paper.is-open .paper-inner,
-  .paper.is-open .paper-story,
-  .paper.is-open .paper-masthead {
-    animation: none;
-    transform: none;
-    opacity: 1;
-  }
-  .traveller.is-moving .trader,
-  .trader.is-walking .leg-a,
-  .trader.is-walking .leg-b,
-  .trader.is-walking .wheel,
-  .place.is-here .place-ring {
-    animation: none;
-  }
+.board-panel .ledger td {
+  padding: 6px 4px;
 }
 
 /* ---------------------------------------------------------------- *
- * Narrow screens: the board becomes a stack.
+ * Sign in
  * ---------------------------------------------------------------- */
 
-@media (max-width: 1080px) {
-  html:has(.board),
-  body:has(.board) {
-    height: auto;
-    overflow: auto;
-  }
-  .board {
-    height: auto;
-  }
-  .panes {
+.signin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+.signin-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 30px 30px 26px;
+}
+.signin-card h1 {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 130;
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-align: center;
+  margin: 0 0 10px;
+}
+.signin-card .lede {
+  color: var(--ink-soft);
+  text-align: center;
+  font-size: 13.5px;
+  margin-bottom: 22px;
+}
+.theme-toggle.corner {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+}
+
+@media (max-width: 900px) {
+  .run-panes,
+  .start {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
   }
-  .pane-left {
-    overflow: visible;
-  }
-  .pane-right {
-    border-left: 0;
-    border-top: 1px solid var(--rule-strong);
-    grid-template-rows: 460px 340px;
+  .routemap {
+    max-width: 360px;
   }
 }
