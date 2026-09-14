@@ -2,9 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../../packages/api/src/app.js';
-import { getRedis } from '../../packages/api/src/redis/client.js';
-import { userCash, ECON_GRANTED } from '../../packages/api/src/redis/keys.js';
-import { STARTING_GRANT } from '@tgc/shared';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 
 const app = createApp();
@@ -25,34 +22,15 @@ describe('POST /auth/register', () => {
     const res = await request(app).post('/auth/register').send(registerBody()).expect(201);
 
     expect(res.body.user.username).toBe('trader_one');
-    expect(res.body.user.cash).toBe(STARTING_GRANT);
-    expect(res.body.user.tradeCount).toBe(0);
     expect(typeof res.body.token).toBe('string');
+    // A player has no persistent balance. Money belongs to a run, and a
+    // run has not started yet.
+    expect(res.body.user.cash).toBeUndefined();
   });
 
   it('never returns the password hash', async () => {
     const res = await request(app).post('/auth/register').send(registerBody()).expect(201);
     expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|\$2[aby]\$/);
-  });
-
-  it('mirrors cash into redis and counts the grant against the faucet', async () => {
-    const res = await request(app).post('/auth/register').send(registerBody()).expect(201);
-    const redis = getRedis();
-
-    // The faucet total is what NFR-5 checks the books against. A grant
-    // that is handed out but not counted makes the invariant unprovable.
-    expect(await redis.get(userCash(res.body.user.id))).toBe(String(STARTING_GRANT));
-    expect(await redis.get(ECON_GRANTED)).toBe(String(STARTING_GRANT));
-  });
-
-  it('accumulates the faucet total across registrations', async () => {
-    await request(app)
-      .post('/auth/register')
-      .send(registerBody({ username: 'alpha' }));
-    await request(app)
-      .post('/auth/register')
-      .send(registerBody({ username: 'beta' }));
-    expect(await getRedis().get(ECON_GRANTED)).toBe(String(STARTING_GRANT * 2));
   });
 
   it('rejects a duplicate username', async () => {
@@ -118,7 +96,7 @@ describe('POST /auth/login', () => {
       .send({ username: 'trader_one', password: goodPassword })
       .expect(200);
     expect(res.body.token).toBeTruthy();
-    expect(res.body.user.cash).toBe(STARTING_GRANT);
+    expect(res.body.user.username).toBe('trader_one');
   });
 
   it('accepts the username in any case', async () => {
@@ -164,7 +142,7 @@ describe('GET /me', () => {
   it('returns the account for a valid token', async () => {
     const res = await request(app).get('/me').set('Authorization', `Bearer ${token}`).expect(200);
     expect(res.body.user.id).toBe(userId);
-    expect(res.body.user.cash).toBe(STARTING_GRANT);
+    expect(res.body.user.username).toBe('trader_one');
   });
 
   it.each([

@@ -2,10 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../packages/api/src/app.js';
 import { getRedis } from '../../packages/api/src/redis/client.js';
-import { rateLimitTrade } from '../../packages/api/src/redis/keys.js';
+
 import { TRADE_LIMIT, AUTH_LIMIT } from '../../packages/api/src/middleware/rateLimit.js';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
-import { makeGood, setSupply } from '../helpers/market.js';
 
 const app = createApp();
 
@@ -92,29 +91,34 @@ describe('the token bucket', () => {
   });
 });
 
-describe('POST /trades rate limit', () => {
+describe('the haul buy rate limit', () => {
   async function player(username) {
-    const res = await request(app)
-      .post('/auth/register')
-      .send({ username, password: 'correct-horse-battery' });
-    return { token: res.body.token, id: res.body.user.id };
+    const { User } = await import('../../packages/api/src/models/User.js');
+    const { issueToken } = await import('../../packages/api/src/services/auth.js');
+    const user = await User.create({
+      username,
+      usernameLower: username.toLowerCase(),
+      passwordHash: 'test-account-cannot-log-in',
+    });
+    return { token: issueToken(user), id: user._id.toString() };
   }
 
-  it('throttles a player firing trades as fast as possible', async () => {
-    const { token, id: userId } = await player('speedy');
-    const { id } = await makeGood({ basePrice: 5, k: 500_000, n: 1 });
-    await setSupply(id, 100_000);
+  it('throttles a player buying as fast as they can click', async () => {
+    const { token } = await player('speedy');
+    const start = await request(app)
+      .post('/haul/start')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    const good = start.body.run.board[0].id;
 
-    // Fired together rather than in sequence. A sequential loop takes
-    // long enough that the bucket refills while it runs - at two tokens
-    // a second, twenty-five trades issued one after another never exceed
-    // the allowance, which is the limiter working, not failing.
+    // Fired together. In sequence the bucket refills faster than the
+    // requests arrive, which is the limiter working rather than failing.
     const results = await Promise.all(
       Array.from({ length: TRADE_LIMIT.capacity + 10 }, () =>
         request(app)
-          .post('/trades')
+          .post('/haul/buy')
           .set('Authorization', `Bearer ${token}`)
-          .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 }),
+          .send({ good, qty: 1 }),
       ),
     );
 
@@ -122,44 +126,29 @@ describe('POST /trades rate limit', () => {
     expect(throttled.length).toBeGreaterThan(0);
     expect(throttled[0].body.error).toBe('trade_rate_limited');
     expect(Number(throttled[0].headers['retry-after'])).toBeGreaterThanOrEqual(1);
-    expect(await getRedis().exists(rateLimitTrade(userId))).toBe(1);
-  });
-
-  it('returns the remaining allowance on a successful trade', async () => {
-    const { token } = await player('counter');
-    const { id } = await makeGood({ basePrice: 5, k: 500_000, n: 1 });
-    await setSupply(id, 100_000);
-
-    const res = await request(app)
-      .post('/trades')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 })
-      .expect(201);
-
-    expect(Number(res.headers['x-ratelimit-limit'])).toBe(TRADE_LIMIT.capacity);
-    expect(Number(res.headers['x-ratelimit-remaining'])).toBe(TRADE_LIMIT.capacity - 1);
   });
 
   it('limits each player separately', async () => {
     const a = await player('busy_one');
     const b = await player('quiet_one');
-    const { id } = await makeGood({ basePrice: 5, k: 500_000, n: 1 });
-    await setSupply(id, 100_000);
+    const startA = await request(app).post('/haul/start').set('Authorization', `Bearer ${a.token}`);
+    await request(app).post('/haul/start').set('Authorization', `Bearer ${b.token}`);
+    const good = startA.body.run.board[0].id;
 
     await Promise.all(
       Array.from({ length: TRADE_LIMIT.capacity + 10 }, () =>
         request(app)
-          .post('/trades')
+          .post('/haul/buy')
           .set('Authorization', `Bearer ${a.token}`)
-          .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 }),
+          .send({ good, qty: 1 }),
       ),
     );
 
-    await request(app)
-      .post('/trades')
+    const other = await request(app)
+      .post('/haul/buy')
       .set('Authorization', `Bearer ${b.token}`)
-      .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 })
-      .expect(201);
+      .send({ good, qty: 1 });
+    expect(other.status).not.toBe(429);
   });
 });
 

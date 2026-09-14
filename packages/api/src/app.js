@@ -2,16 +2,7 @@ import express from 'express';
 import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { meRouter } from './routes/me.js';
-import { goodsRouter } from './routes/goods.js';
-import { tradesRouter } from './routes/trades.js';
-import { portfolioRouter } from './routes/portfolio.js';
-import { leaderboardRouter } from './routes/leaderboard.js';
-import { playersRouter } from './routes/players.js';
-import { issueRouter } from './routes/issue.js';
-import { newspaperRouter } from './routes/newspaper.js';
-import { shortsRouter } from './routes/shorts.js';
-import { eventsRouter } from './routes/events.js';
-import { worldRouter } from './routes/world.js';
+import { haulRouter } from './routes/haul.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -60,16 +51,7 @@ export function createApp() {
   app.use('/health', healthRouter);
   app.use('/auth', authRouter);
   app.use('/me', meRouter);
-  app.use('/goods', goodsRouter);
-  app.use('/trades', tradesRouter);
-  app.use('/portfolio', portfolioRouter);
-  app.use('/leaderboard', leaderboardRouter);
-  app.use('/players', playersRouter);
-  app.use('/issue', issueRouter);
-  app.use('/newspaper', newspaperRouter);
-  app.use('/shorts', shortsRouter);
-  app.use('/events', eventsRouter);
-  app.use('/world', worldRouter);
+  app.use('/haul', haulRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });
