@@ -63,9 +63,6 @@ export const ECON_RESERVE = 'econ:reserve';
 /** Notes destroyed by the sell spread. The sink term. */
 export const ECON_BURNED = 'econ:burned';
 
-/** The durable ledger head. Phase 6. */
-export const STREAM_TRADES = 'stream:trades';
-
 /** Net worth leaderboard sorted set. Phase 10. */
 export const LB_NETWORTH = 'lb:networth';
 

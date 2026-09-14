@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../packages/api/src/app.js';
 import { getRedis } from '../../packages/api/src/redis/client.js';
-import { STREAM_TRADES, ECON_GRANTED, userCash } from '../../packages/api/src/redis/keys.js';
+import { ECON_GRANTED, userCash } from '../../packages/api/src/redis/keys.js';
 import { revalueAll, rankOf } from '../../packages/api/src/services/leaderboard.js';
 import { bonusFor, BASE_BONUS, MAX_BONUS } from '../../packages/api/src/services/bonus.js';
 import { User } from '../../packages/api/src/models/User.js';
@@ -14,12 +14,7 @@ const app = createApp();
 
 beforeAll(setupStores);
 afterAll(teardownStores);
-beforeEach(async () => {
-  await resetStores();
-  await getRedis()
-    .xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM')
-    .catch(() => {});
-});
+beforeEach(resetStores);
 
 const trade = (token, body) =>
   request(app).post('/trades').set('Authorization', `Bearer ${token}`).send(body);

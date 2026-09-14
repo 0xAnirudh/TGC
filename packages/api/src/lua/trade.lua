@@ -1,4 +1,4 @@
--- keys: 7
+-- keys: 6
 --
 -- Atomic trade execution.
 --
@@ -29,33 +29,13 @@
 --   4 user:{id}:holdings          4 k     (curve supply scale)
 --   5 econ:reserve                5 n     (curve steepness)
 --   6 econ:burned                 6 spreadBps
---   7 stream:trades               7 limit (max cost on a buy,
+--                                 7 limit (max cost on a buy,
 --                                          min return on a sell)
 --                                 8 capBps
 --                                 9 bootstrapQty
---                                10 userId
 --
--- Returns { 'ok', supplyAfter, notional, spread, cashAfter, streamId }
+-- Returns { 'ok', supplyAfter, notional, spread, cashAfter }
 --      or { 'error', code, ... }
---
--- THE STREAM APPEND IS INSIDE THIS SCRIPT ON PURPOSE.
---
--- The obvious alternative is to execute the trade here and write it to
--- Mongo afterwards from JavaScript. That is a dual write: the first can
--- succeed and the second fail, leaving the market moved and the ledger
--- silent, and recovering means a compensating reversal that can itself
--- fail.
---
--- Appending to a Redis stream inside the atomic block removes the second
--- write entirely. Either the trade happened and is in the log, or
--- neither. A relay worker copies stream entries into Mongo afterwards at
--- its own pace - and if Mongo is down, entries simply accumulate and get
--- projected when it returns. Nothing is lost and nothing needs undoing.
---
--- XADD returns the stream entry id, which is unique and ordered. That id
--- IS the trade id, which is what makes the projection idempotent: the
--- relay upserts on it, so delivering the same entry twice writes the
--- same row twice and changes nothing.
 --
 -- Every number is returned as a string, formatted with '%.0f' rather
 -- than tostring(). Two separate reasons:
@@ -77,7 +57,6 @@ local cash_key     = KEYS[3]
 local holdings_key = KEYS[4]
 local reserve_key  = KEYS[5]
 local burned_key   = KEYS[6]
-local stream_key   = KEYS[7]
 
 local side       = ARGV[1]
 local qty        = tonumber(ARGV[2])
@@ -88,7 +67,6 @@ local spread_bps = tonumber(ARGV[6])
 local limit      = tonumber(ARGV[7])
 local cap_bps    = tonumber(ARGV[8])
 local bootstrap  = tonumber(ARGV[9])
-local user_id    = ARGV[10]
 
 local BPS = 10000
 
@@ -150,19 +128,8 @@ if side == 'buy' then
   redis.call('HINCRBY', holdings_key, good_id, qty)
   redis.call('INCRBY', reserve_key, cost)
 
-  local id = redis.call('XADD', stream_key, '*',
-    'userId', user_id,
-    'goodId', good_id,
-    'side', 'buy',
-    'qty', fmt(qty),
-    'supplyBefore', fmt(supply),
-    'supplyAfter', fmt(supply + qty),
-    'basePrice', fmt(base),
-    'notional', fmt(cost),
-    'spread', '0',
-    'cashAfter', fmt(cash - cost))
 
-  return { 'ok', fmt(supply + qty), fmt(cost), '0', fmt(cash - cost), id }
+  return { 'ok', fmt(supply + qty), fmt(cost), '0', fmt(cash - cost) }
 end
 
 -- sell
@@ -189,16 +156,5 @@ redis.call('HINCRBY', holdings_key, good_id, -qty)
 redis.call('DECRBY', reserve_key, gross)
 redis.call('INCRBY', burned_key, spread)
 
-local id = redis.call('XADD', stream_key, '*',
-  'userId', user_id,
-  'goodId', good_id,
-  'side', 'sell',
-  'qty', fmt(qty),
-  'supplyBefore', fmt(supply),
-  'supplyAfter', fmt(supply - qty),
-  'basePrice', fmt(base),
-  'notional', fmt(net),
-  'spread', fmt(spread),
-  'cashAfter', fmt(cash + net))
 
-return { 'ok', fmt(supply - qty), fmt(net), fmt(spread), fmt(cash + net), id }
+return { 'ok', fmt(supply - qty), fmt(net), fmt(spread), fmt(cash + net) }

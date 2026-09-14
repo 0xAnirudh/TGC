@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../packages/api/src/app.js';
 import { getRedis } from '../../packages/api/src/redis/client.js';
-import { rateLimitTrade, STREAM_TRADES } from '../../packages/api/src/redis/keys.js';
+import { rateLimitTrade } from '../../packages/api/src/redis/keys.js';
 import { TRADE_LIMIT, AUTH_LIMIT } from '../../packages/api/src/middleware/rateLimit.js';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 import { makeGood, setSupply } from '../helpers/market.js';
@@ -11,12 +11,7 @@ const app = createApp();
 
 beforeAll(setupStores);
 afterAll(teardownStores);
-beforeEach(async () => {
-  await resetStores();
-  await getRedis()
-    .xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM')
-    .catch(() => {});
-});
+beforeEach(resetStores);
 
 describe('the token bucket', () => {
   it('allows a burst up to capacity, then refuses', async () => {
@@ -110,15 +105,18 @@ describe('POST /trades rate limit', () => {
     const { id } = await makeGood({ basePrice: 5, k: 500_000, n: 1 });
     await setSupply(id, 100_000);
 
-    const results = [];
-    for (let i = 0; i < TRADE_LIMIT.capacity + 5; i += 1) {
-      results.push(
-        await request(app)
+    // Fired together rather than in sequence. A sequential loop takes
+    // long enough that the bucket refills while it runs - at two tokens
+    // a second, twenty-five trades issued one after another never exceed
+    // the allowance, which is the limiter working, not failing.
+    const results = await Promise.all(
+      Array.from({ length: TRADE_LIMIT.capacity + 10 }, () =>
+        request(app)
           .post('/trades')
           .set('Authorization', `Bearer ${token}`)
           .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 }),
-      );
-    }
+      ),
+    );
 
     const throttled = results.filter((r) => r.status === 429);
     expect(throttled.length).toBeGreaterThan(0);
@@ -148,12 +146,14 @@ describe('POST /trades rate limit', () => {
     const { id } = await makeGood({ basePrice: 5, k: 500_000, n: 1 });
     await setSupply(id, 100_000);
 
-    for (let i = 0; i < TRADE_LIMIT.capacity + 2; i += 1) {
-      await request(app)
-        .post('/trades')
-        .set('Authorization', `Bearer ${a.token}`)
-        .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 });
-    }
+    await Promise.all(
+      Array.from({ length: TRADE_LIMIT.capacity + 10 }, () =>
+        request(app)
+          .post('/trades')
+          .set('Authorization', `Bearer ${a.token}`)
+          .send({ goodId: id, side: 'buy', qty: 10, slippageBps: 2_000 }),
+      ),
+    );
 
     await request(app)
       .post('/trades')

@@ -4,7 +4,6 @@ import request from 'supertest';
 import { createApp } from '../../packages/api/src/app.js';
 import { getRedis } from '../../packages/api/src/redis/client.js';
 import {
-  STREAM_TRADES,
   ECON_BURNED,
   ECON_GRANTED,
   userCash,
@@ -15,21 +14,15 @@ import { generateNewspaper, dateKey } from '../../packages/api/src/services/news
 import { driftTick } from '../../packages/api/src/services/drift.js';
 import { User } from '../../packages/api/src/models/User.js';
 import { Good } from '../../packages/api/src/models/Good.js';
-import { runOnce } from '../../packages/relay/src/index.js';
 import { STARTING_GRANT } from '@tgc/shared';
-import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
+import { setupStores, resetStores, teardownStores, settleLedger } from '../helpers/stores.js';
 import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
 
 const app = createApp();
 
 beforeAll(setupStores);
 afterAll(teardownStores);
-beforeEach(async () => {
-  await resetStores();
-  await getRedis()
-    .xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM')
-    .catch(() => {});
-});
+beforeEach(resetStores);
 
 /** A player who satisfies every issuance gate. */
 async function makeQualifiedIssuer(username = 'issuer_one') {
@@ -222,7 +215,7 @@ describe('the newspaper', () => {
       .set('Authorization', `Bearer ${p.token}`)
       .send({ goodId: id, side: 'buy', qty: 100, slippageBps: 1_000 })
       .expect(201);
-    for (let i = 0; i < 40; i += 1) if ((await runOnce()) === 0) break;
+    await settleLedger(1);
 
     const paper = await generateNewspaper();
     const biggest = paper.headlines.find((h) => h.template === 'biggest_trade');
@@ -246,7 +239,7 @@ describe('the newspaper', () => {
       .set('Authorization', `Bearer ${p.token}`)
       .send({ goodId: goods[0]._id.toString(), side: 'buy', qty: 100, slippageBps: 2_000 })
       .expect(201);
-    for (let i = 0; i < 40; i += 1) if ((await runOnce()) === 0) break;
+    await settleLedger(1);
 
     const paper = await generateNewspaper();
     expect(paper.headlines.some((h) => h.template === 'top_loser')).toBe(true);

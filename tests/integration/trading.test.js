@@ -14,35 +14,12 @@ import { User } from '../../packages/api/src/models/User.js';
 import { buyCost, sellBreakdown, STARTING_GRANT } from '@tgc/shared';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
-import { runOnce } from '../../packages/relay/src/index.js';
-import { STREAM_TRADES } from '../../packages/api/src/redis/keys.js';
 
 const app = createApp();
 
 beforeAll(setupStores);
 afterAll(teardownStores);
-beforeEach(async () => {
-  await resetStores();
-  await getRedis()
-    .xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM')
-    .catch(() => {});
-});
-
-/**
- * Drain the trade stream into Mongo.
- *
- * Since Phase 6 the API writes no ledger rows at all - the Lua script
- * appends to a Redis stream and the relay worker projects it. Anything
- * read from Mongo (a trade row, a holding's cost basis) therefore does
- * not exist until the relay has run. In production the relay runs
- * continuously, so the lag is milliseconds; in tests it has to be driven
- * by hand.
- */
-async function drainRelay() {
-  for (let i = 0; i < 40; i += 1) {
-    if ((await runOnce()) === 0) break;
-  }
-}
+beforeEach(resetStores);
 
 async function makePlayer(username = 'trader') {
   const res = await request(app)
@@ -133,10 +110,6 @@ describe('POST /trades', () => {
     await trade(token, { goodId: id, side: 'buy', qty: 100 }).expect(201);
     await trade(token, { goodId: id, side: 'buy', qty: 100 }).expect(201);
 
-    // Cost basis lives in the Mongo projection, so the relay has to have
-    // run before the portfolio can report it.
-    await drainRelay();
-
     const res = await request(app)
       .get('/portfolio')
       .set('Authorization', `Bearer ${token}`)
@@ -222,7 +195,6 @@ describe('GET /portfolio', () => {
     const { id } = await makeGood();
     await setSupply(id, 10_000);
     await trade(token, { goodId: id, side: 'buy', qty: 100 }).expect(201);
-    await drainRelay();
 
     const res = await request(app)
       .get('/portfolio')

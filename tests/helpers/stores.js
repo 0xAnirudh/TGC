@@ -46,3 +46,31 @@ export async function resetStores() {
 export async function teardownStores() {
   await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
 }
+
+/**
+ * Wait until the ledger has caught up with the trades just placed.
+ *
+ * The ledger write is deliberately not awaited by the request - see the
+ * comment on recordTrade for why - so a test that places trades and then
+ * reads Mongo is racing a write that has not landed yet. Production does
+ * not care, because nothing reads those rows on the request path. Tests
+ * that assert on them do.
+ *
+ * Polls rather than sleeping a fixed amount, so it is as fast as the
+ * write actually is.
+ */
+export async function settleLedger(expected, timeoutMs = 10_000) {
+  const { Trade } = await import('../../packages/api/src/models/Trade.js');
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if ((await Trade.countDocuments()) >= expected) {
+      // One more tick, so the sibling writes in the same Promise.all
+      // (holdings, market, cash) have landed too.
+      await new Promise((r) => setTimeout(r, 60));
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  return false;
+}

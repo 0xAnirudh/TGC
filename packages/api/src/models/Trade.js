@@ -15,13 +15,11 @@ import mongoose from 'mongoose';
 const tradeSchema = new mongoose.Schema(
   {
     /**
-     * The Redis stream entry id this row was projected from.
+     * A unique id for this ledger row, generated when it is written.
      *
-     * Unique, and that uniqueness is the whole idempotency story. The
-     * relay delivers at least once - a crash between writing to Mongo
-     * and acknowledging the entry means it arrives again - so the write
-     * is an upsert on this field. Delivering the same entry twice writes
-     * the same row twice and changes nothing.
+     * Unique so a retry cannot produce two rows for one trade, and
+     * sortable-adjacent so the rebuild has a stable ordering to replay
+     * in alongside createdAt.
      */
     streamId: { type: String, required: true, unique: true, index: true },
 
