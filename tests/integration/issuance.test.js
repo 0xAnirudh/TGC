@@ -6,6 +6,7 @@ import { getRedis } from '../../packages/api/src/redis/client.js';
 import {
   ECON_BURNED,
   ECON_GRANTED,
+  ECON_RESERVE,
   userCash,
   goodSupply,
 } from '../../packages/api/src/redis/keys.js';
@@ -17,6 +18,7 @@ import { Good } from '../../packages/api/src/models/Good.js';
 import { STARTING_GRANT } from '@tgc/shared';
 import { setupStores, resetStores, teardownStores, settleLedger } from '../helpers/stores.js';
 import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
+import { REGIONS, openingStockFor } from '@tgc/shared';
 
 const app = createApp();
 
@@ -82,10 +84,13 @@ describe('POST /issue', () => {
     expect(burnedAfter - burnedBefore).toBe(ISSUE_FEE);
   });
 
-  it('starts the good at zero supply with no allocation to the issuer', async () => {
+  it('gives the issuer no allocation, whatever stock the markets open with', async () => {
     // Two reasons, and both matter. Economically a free allocation is a
     // mint handed to one player. Structurally, supply no trade created
     // is not reconstructable - the rebuild would erase it (FINDING-007).
+    //
+    // Markets do open holding stock now, so "zero supply" is no longer
+    // the check. What matters is that none of it belongs to the issuer.
     const p = await makeQualifiedIssuer();
     const res = await request(app)
       .post('/issue')
@@ -94,7 +99,10 @@ describe('POST /issue', () => {
       .expect(201);
 
     const id = res.body.good.id;
-    expect(await getRedis().get(goodSupply(id))).toBe('0');
+    const expected = String(openingStockFor(10_000));
+    for (const r of REGIONS) {
+      expect(await getRedis().get(goodSupply(id, r.id))).toBe(expected);
+    }
     expect(await getRedis().hget(`user:${p.id}:holdings`, id)).toBeNull();
   });
 
@@ -107,12 +115,14 @@ describe('POST /issue', () => {
       .expect(201);
 
     const redis = getRedis();
-    const [granted, burned] = await redis.mget(ECON_GRANTED, ECON_BURNED);
+    const [granted, reserve, burned] = await redis.mget(ECON_GRANTED, ECON_RESERVE, ECON_BURNED);
     const users = await User.find().lean();
     const cashValues = await redis.mget(...users.map((u) => userCash(u._id.toString())));
     const cash = cashValues.reduce((sum, v) => sum + Number(v ?? 0), 0);
 
-    expect(cash + Number(burned ?? 0)).toBe(Number(granted));
+    // The reserve is a term now: issuing seeds opening stock in four
+    // markets, and the Notes backing it are real.
+    expect(cash + Number(reserve ?? 0) + Number(burned ?? 0)).toBe(Number(granted));
   });
 
   it('makes the new good immediately tradeable by anyone', async () => {

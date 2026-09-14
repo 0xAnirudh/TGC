@@ -14,6 +14,7 @@ import { withJobLock } from '../../packages/api/src/services/jobLock.js';
 import { PriceSnapshot } from '../../packages/api/src/models/PriceSnapshot.js';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 import { makeGood } from '../helpers/market.js';
+import { REGIONS, DEFAULT_REGION } from '@tgc/shared';
 
 const app = createApp();
 
@@ -82,13 +83,16 @@ describe('driftTick', () => {
     const a = await makeGood({ name: 'Iron', basePrice: 500, k: 20_000, n: 1 });
     await makeGood({ name: 'Silk', basePrice: 300, k: 8_000, n: 2 });
 
-    const before = await getRedis().get(goodBasePrice(a.id));
+    const before = await getRedis().get(goodBasePrice(a.id, DEFAULT_REGION));
     const result = await driftTick({ random: () => 0.999999 });
 
     expect(result.goods).toBe(2);
-    expect(result.snapshots).toBe(2);
-    expect(Number(await getRedis().get(goodBasePrice(a.id)))).toBeGreaterThan(Number(before));
-    expect(await PriceSnapshot.countDocuments()).toBe(2);
+    // One snapshot per good per region - each market drifts on its own.
+    expect(result.snapshots).toBe(2 * REGIONS.length);
+    expect(Number(await getRedis().get(goodBasePrice(a.id, DEFAULT_REGION)))).toBeGreaterThan(
+      Number(before),
+    );
+    expect(await PriceSnapshot.countDocuments()).toBe(2 * REGIONS.length);
   });
 
   it('moves basePrice and never supply', async () => {
@@ -97,10 +101,11 @@ describe('driftTick', () => {
     // them - see FINDING-007.
     const { id } = await makeGood({ supply: 4_000 });
     const redis = getRedis();
-    await redis.set(`mkt:${id}:supply`, 4_000);
 
     await driftTick({ random: () => 0.999999 });
-    expect(await redis.get(`mkt:${id}:supply`)).toBe('4000');
+    for (const r of REGIONS) {
+      expect(await redis.get(`mkt:${id}:${r.id}:supply`)).toBe('4000');
+    }
   });
 });
 
@@ -147,7 +152,8 @@ describe('GET /goods/:id/history', () => {
     await driftTick();
 
     const res = await request(app).get(`/goods/${id}/history?range=24h`).expect(200);
-    expect(res.body.points).toHaveLength(2);
+    // Two ticks, one snapshot per region each.
+    expect(res.body.points.length).toBe(2 * REGIONS.length);
     expect(res.body.points[0]).toHaveProperty('price');
     expect(res.body.points[0]).toHaveProperty('supply');
   });
@@ -158,6 +164,7 @@ describe('GET /goods/:id/history', () => {
     await PriceSnapshot.insertMany(
       Array.from({ length: 900 }, (_, i) => ({
         goodId: good._id,
+        region: DEFAULT_REGION,
         price: 100 + i,
         supply: 0,
         basePrice: 100,

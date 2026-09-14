@@ -10,6 +10,7 @@ import { ensureAccountLoaded } from './accounts.js';
 import { publishPriceChange } from '../realtime/publish.js';
 import { log } from '../log.js';
 import { price, buyCost, sellBreakdown, maxTradeQty } from '@tgc/shared';
+import { currentLocation, assertNotTravelling } from './location.js';
 
 /**
  * Short selling.
@@ -60,9 +61,12 @@ export const LIQUIDATION_RATIO = 1.45;
 /** Nobody may hold more than this many open shorts at once. */
 export const MAX_OPEN_SHORTS = 5;
 
-async function liveState(goodId) {
+async function liveState(goodId, region) {
   const redis = getRedis();
-  const [supply, basePrice] = await redis.mget(goodSupply(goodId), goodBasePrice(goodId));
+  const [supply, basePrice] = await redis.mget(
+    goodSupply(goodId, region),
+    goodBasePrice(goodId, region),
+  );
   if (supply === null || basePrice === null) {
     throw ApiError.notFound('market_not_found', 'No live market for that good');
   }
@@ -76,6 +80,8 @@ export async function openShort({ userId, goodId, qty }) {
 
   const good = await readGoodMeta(goodId);
   await ensureAccountLoaded(userId);
+  await assertNotTravelling(userId);
+  const region = await currentLocation(userId);
 
   const open = await ShortPosition.countDocuments({ userId, status: 'open' });
   if (open >= MAX_OPEN_SHORTS) {
@@ -85,7 +91,7 @@ export async function openShort({ userId, goodId, qty }) {
     );
   }
 
-  const { supply, basePrice } = await liveState(goodId);
+  const { supply, basePrice } = await liveState(goodId, region);
 
   const cap = maxTradeQty(supply);
   if (qty > cap) {
@@ -123,7 +129,7 @@ export async function openShort({ userId, goodId, qty }) {
   // reserve and burn move exactly as they would for an ordinary sell.
   await redis
     .multi()
-    .set(goodSupply(goodId), supplyAfter)
+    .set(goodSupply(goodId, region), supplyAfter)
     .decrby(userCash(userId), collateral)
     .decrby(ECON_RESERVE, gross)
     .incrby(ECON_BURNED, spread)
@@ -132,6 +138,7 @@ export async function openShort({ userId, goodId, qty }) {
   const position = await ShortPosition.create({
     userId,
     goodId,
+    region,
     quantity: qty,
     proceeds: net,
     collateral,
@@ -139,8 +146,11 @@ export async function openShort({ userId, goodId, qty }) {
     liquidationPrice: Math.round(entryPrice * LIQUIDATION_RATIO * 100) / 100,
   });
 
-  await Market.updateOne({ goodId }, { $set: { supply: supplyAfter }, $inc: { vol24h: qty } });
-  publishPrice(goodId, basePrice, supplyAfter, good).catch(() => {});
+  await Market.updateOne(
+    { goodId, region },
+    { $set: { supply: supplyAfter }, $inc: { vol24h: qty } },
+  );
+  publishPrice(goodId, region, basePrice, supplyAfter, good).catch(() => {});
 
   return {
     position: position.toPublic(),
@@ -157,8 +167,11 @@ export async function closeShort({ userId, positionId, liquidating = false }) {
   }
 
   const goodId = position.goodId.toString();
+  // Closed in the market it was opened in, whatever the player has done
+  // since. A short is a promise to return units to a specific place.
+  const region = position.region;
   const good = await readGoodMeta(goodId);
-  const { supply, basePrice } = await liveState(goodId);
+  const { supply, basePrice } = await liveState(goodId, region);
 
   const cost = buyCost(basePrice, supply, position.quantity, good.k, good.n);
   const supplyAfter = supply + position.quantity;
@@ -178,8 +191,8 @@ export async function closeShort({ userId, positionId, liquidating = false }) {
   const redis = getRedis();
   const tx = redis
     .multi()
-    .set(goodSupply(goodId), supplyAfter)
-    .incrby(userCash(userId), returned)
+    .set(goodSupply(goodId, region), supplyAfter)
+    .incrby(userCash(position.userId.toString()), returned)
     .incrby(ECON_RESERVE, cost);
   if (shortfall > 0) tx.decrby(ECON_BURNED, shortfall);
   await tx.exec();
@@ -190,11 +203,11 @@ export async function closeShort({ userId, positionId, liquidating = false }) {
   await position.save();
 
   await Market.updateOne(
-    { goodId },
+    { goodId, region },
     { $set: { supply: supplyAfter }, $inc: { vol24h: position.quantity } },
   );
   await User.updateOne({ _id: position.userId }, { $inc: { tradeCount: 1 } });
-  publishPrice(goodId, basePrice, supplyAfter, good).catch(() => {});
+  publishPrice(goodId, region, basePrice, supplyAfter, good).catch(() => {});
 
   return {
     position: position.toPublic(),
@@ -222,7 +235,10 @@ export async function liquidateUnderwater() {
 
   for (const position of open) {
     const goodId = position.goodId.toString();
-    const [supplyRaw, baseRaw] = await redis.mget(goodSupply(goodId), goodBasePrice(goodId));
+    const [supplyRaw, baseRaw] = await redis.mget(
+      goodSupply(goodId, position.region),
+      goodBasePrice(goodId, position.region),
+    );
     if (supplyRaw === null || baseRaw === null) continue;
 
     const good = await readGoodMeta(goodId);
@@ -261,7 +277,10 @@ export async function openShorts(userId) {
   for (const p of positions) {
     const goodId = p.goodId.toString();
     const good = await readGoodMeta(goodId);
-    const [supplyRaw, baseRaw] = await redis.mget(goodSupply(goodId), goodBasePrice(goodId));
+    const [supplyRaw, baseRaw] = await redis.mget(
+      goodSupply(goodId, p.region),
+      goodBasePrice(goodId, p.region),
+    );
     if (supplyRaw === null) continue;
 
     const supply = Number(supplyRaw);
@@ -274,6 +293,7 @@ export async function openShorts(userId) {
       goodId,
       name: good.name,
       colorToken: good.colorToken,
+      region: p.region,
       quantity: p.quantity,
       entryPrice: p.entryPrice,
       currentPrice: Math.round(current * 100) / 100,
@@ -294,9 +314,10 @@ export async function heldByShorts() {
   return open.reduce((sum, p) => sum + p.proceeds + p.collateral, 0);
 }
 
-function publishPrice(goodId, basePrice, supply, good) {
+function publishPrice(goodId, region, basePrice, supply, good) {
   return publishPriceChange({
     goodId,
+    region,
     price: Math.round(price(basePrice, supply, good.k, good.n) * 100) / 100,
     supply,
     side: 'short',

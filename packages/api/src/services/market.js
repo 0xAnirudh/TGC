@@ -6,6 +6,7 @@ import { log } from '../log.js';
 import { ApiError } from '../util/errors.js';
 import { price, buyCost, sellBreakdown, maxTradeQty } from '@tgc/shared';
 import { cacheGoodMeta } from './goodCache.js';
+import { REGIONS, DEFAULT_REGION } from '@tgc/shared';
 
 /**
  * Market state lives in two places, and which one wins matters.
@@ -40,8 +41,8 @@ export async function warmMarketState() {
   for (const m of markets) {
     const id = m.goodId.toString();
     const [supplySet, priceSet] = await Promise.all([
-      redis.set(goodSupply(id), m.supply, 'NX'),
-      redis.set(goodBasePrice(id), m.basePrice, 'NX'),
+      redis.set(goodSupply(id, m.region), m.supply, 'NX'),
+      redis.set(goodBasePrice(id, m.region), m.basePrice, 'NX'),
     ]);
     if (supplySet || priceSet) warmed += 1;
   }
@@ -54,9 +55,12 @@ export async function warmMarketState() {
  * Read one good's live numbers from Redis. No Mongo round trip - this is
  * on the quote path, which NFR-1 holds to p95 under 10ms.
  */
-export async function readMarketState(goodId) {
+export async function readMarketState(goodId, region = DEFAULT_REGION) {
   const redis = getRedis();
-  const [supply, basePrice] = await redis.mget(goodSupply(goodId), goodBasePrice(goodId));
+  const [supply, basePrice] = await redis.mget(
+    goodSupply(goodId, region),
+    goodBasePrice(goodId, region),
+  );
 
   if (supply === null || basePrice === null) {
     throw ApiError.notFound('market_not_found', 'No live market for that good');
@@ -65,11 +69,11 @@ export async function readMarketState(goodId) {
 }
 
 /** Read every good's live numbers in one round trip rather than N. */
-export async function readAllMarketState(goodIds) {
+export async function readAllMarketState(goodIds, region = DEFAULT_REGION) {
   if (goodIds.length === 0) return new Map();
 
   const redis = getRedis();
-  const keys = goodIds.flatMap((id) => [goodSupply(id), goodBasePrice(id)]);
+  const keys = goodIds.flatMap((id) => [goodSupply(id, region), goodBasePrice(id, region)]);
   const values = await redis.mget(...keys);
 
   const state = new Map();
@@ -142,13 +146,36 @@ export function computeQuote({ basePrice, supply, k, n, side, qty }) {
 const round2 = (v) => Math.round(v * 100) / 100;
 
 /** A good plus its live market numbers, for listings and detail pages. */
-export async function listGoodsWithMarket() {
+/**
+ * The market as seen from one region.
+ *
+ * Also carries the best price for the same good elsewhere, because the
+ * gap between here and there is the entire reason regions exist, and
+ * making a player click into four pages to find it would hide the game.
+ */
+export async function listGoodsWithMarket(region = DEFAULT_REGION) {
   const goods = await Good.find().lean();
-  const state = await readAllMarketState(goods.map((g) => g._id.toString()));
+  const ids = goods.map((g) => g._id.toString());
+  const state = await readAllMarketState(ids, region);
+
+  const elsewhere = new Map();
+  for (const other of REGIONS) {
+    if (other.id === region) continue;
+    const s = await readAllMarketState(ids, other.id);
+    for (const [id, live] of s) {
+      const good = goods.find((g) => g._id.toString() === id);
+      const p = price(live.basePrice, live.supply, good.k, good.n);
+      const best = elsewhere.get(id);
+      if (!best || p > best.price) elsewhere.set(id, { region: other.id, price: round2(p) });
+    }
+  }
 
   return goods.map((g) => {
     const id = g._id.toString();
     const live = state.get(id);
+    const here = live ? round2(price(live.basePrice, live.supply, g.k, g.n)) : null;
+    const best = elsewhere.get(id) ?? null;
+
     return {
       id,
       name: g.name,
@@ -158,8 +185,12 @@ export async function listGoodsWithMarket() {
       n: g.n,
       // A good with no live state has not been warmed into Redis yet.
       // Report it rather than inventing a price.
-      price: live ? round2(price(live.basePrice, live.supply, g.k, g.n)) : null,
+      price: here,
       supply: live ? live.supply : null,
+      region,
+      // Where this sells for most, and by how much. The arbitrage, shown.
+      bestElsewhere: best,
+      spreadPct: here && best ? Math.round(((best.price - here) / here) * 1000) / 10 : null,
     };
   });
 }

@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 const priceSnapshotSchema = new mongoose.Schema(
   {
     goodId: { type: mongoose.Schema.Types.ObjectId, ref: 'Good', required: true },
+    region: { type: String, required: true, default: 'harbour' },
     price: { type: Number, required: true },
     supply: { type: Number, required: true },
     basePrice: { type: Number, required: true },
@@ -21,7 +22,7 @@ const priceSnapshotSchema = new mongoose.Schema(
 );
 
 // Every history query is "this good, this time range, in order".
-priceSnapshotSchema.index({ goodId: 1, at: -1 });
+priceSnapshotSchema.index({ goodId: 1, region: 1, at: -1 });
 
 // Snapshots are the largest-growing collection in the system and nothing
 // reads one older than a month, so Mongo expires them rather than a job

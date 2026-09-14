@@ -4,8 +4,10 @@ import { createApp } from '../../packages/api/src/app.js';
 import { getRedis } from '../../packages/api/src/redis/client.js';
 import { rebuildFromLedger, snapshotState } from '../../packages/api/src/services/rebuild.js';
 import { Trade } from '../../packages/api/src/models/Trade.js';
+import { User } from '../../packages/api/src/models/User.js';
 import { setupStores, resetStores, teardownStores, settleLedger } from '../helpers/stores.js';
 import { makeGood, setSupply } from '../helpers/market.js';
+import { DEFAULT_REGION } from '@tgc/shared';
 
 const app = createApp();
 
@@ -72,6 +74,9 @@ describe('rebuild from the ledger', () => {
     // supply is derivable from the trades alone, so the rebuild starts
     // every good at zero and must still arrive at the right number.
     const token = await makePlayer('deriver');
+    // Six hundred units needs a hold bigger than the default five
+    // hundred. This test is about the rebuild, not the cargo limit.
+    await User.updateOne({ usernameLower: 'deriver' }, { $set: { cargoCapacity: 100_000 } });
     const { id } = await makeGood({ basePrice: 20, k: 200_000, n: 1, supply: 0 });
 
     for (let i = 0; i < 6; i += 1) {
@@ -80,7 +85,13 @@ describe('rebuild from the ledger', () => {
     await settleLedger(6);
 
     const { state } = await rebuildFromLedger({ dryRun: true });
-    expect(state.supply.get(id)).toBe(600);
+
+    // Supply is keyed by market now, and every market starts at its
+    // opening stock rather than zero - that stock is derived from the
+    // good's k, not read back from Mongo.
+    // The market was created at supply 0, so that is its opening stock
+    // and the rebuild starts from there - all 600 units came from trades.
+    expect(state.supply.get(`${id}:${DEFAULT_REGION}`)).toBe(600);
   });
 
   it('balances the money supply after rebuilding', async () => {

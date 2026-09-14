@@ -4,7 +4,7 @@ import { PriceSnapshot } from '../models/PriceSnapshot.js';
 import { getRedis } from '../redis/client.js';
 import { goodSupply, goodBasePrice } from '../redis/keys.js';
 import { log } from '../log.js';
-import { price } from '@tgc/shared';
+import { price, REGIONS } from '@tgc/shared';
 
 /**
  * Price drift.
@@ -73,38 +73,50 @@ export async function driftTick({ random = Math.random } = {}) {
   const snapshots = [];
   const moved = [];
 
+  // Every region drifts independently. That is what keeps price gaps
+  // opening and closing on their own rather than staying fixed - a
+  // static gap is a puzzle solved once, not a market.
   for (const good of goods) {
     const id = good._id.toString();
-    const [supplyRaw, baseRaw] = await redis.mget(goodSupply(id), goodBasePrice(id));
-    if (supplyRaw === null || baseRaw === null) continue;
 
-    const supply = Number(supplyRaw);
-    const basePrice = Number(baseRaw);
-    const launchPrice = launchPriceByGood.get(id) ?? basePrice;
+    for (const region of REGIONS) {
+      const [supplyRaw, baseRaw] = await redis.mget(
+        goodSupply(id, region.id),
+        goodBasePrice(id, region.id),
+      );
+      if (supplyRaw === null || baseRaw === null) continue;
 
-    const market = markets.find((m) => m.goodId.toString() === id);
-    const volumeBias = volumeBiasFor(market?.vol24h ?? 0, supply);
+      const supply = Number(supplyRaw);
+      const basePrice = Number(baseRaw);
+      const market = markets.find((m) => m.goodId.toString() === id && m.region === region.id);
+      const launchPrice = market?.launchPrice ?? launchPriceByGood.get(id) ?? basePrice;
+      const volumeBias = volumeBiasFor(market?.vol24h ?? 0, supply);
 
-    const next = nextBasePrice({ basePrice, launchPrice, volumeBias, random });
-    if (next !== basePrice) {
-      await redis.set(goodBasePrice(id), next);
-      moved.push({ good: good.name, from: basePrice, to: next });
+      const next = nextBasePrice({ basePrice, launchPrice, volumeBias, random });
+      if (next !== basePrice) {
+        await redis.set(goodBasePrice(id, region.id), next);
+        moved.push({ good: good.name, region: region.id, from: basePrice, to: next });
+      }
+
+      snapshots.push({
+        goodId: good._id,
+        region: region.id,
+        price: Math.round(price(next, supply, good.k, good.n) * 100) / 100,
+        supply,
+        basePrice: next,
+        at: new Date(),
+      });
     }
-
-    snapshots.push({
-      goodId: good._id,
-      price: Math.round(price(next, supply, good.k, good.n) * 100) / 100,
-      supply,
-      basePrice: next,
-      at: new Date(),
-    });
   }
 
   if (snapshots.length > 0) {
     await PriceSnapshot.insertMany(snapshots, { ordered: false });
     await Promise.all(
       snapshots.map((s) =>
-        Market.updateOne({ goodId: s.goodId }, { $set: { basePrice: s.basePrice } }),
+        Market.updateOne(
+          { goodId: s.goodId, region: s.region },
+          { $set: { basePrice: s.basePrice } },
+        ),
       ),
     );
   }

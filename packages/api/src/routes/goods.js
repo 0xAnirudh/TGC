@@ -9,6 +9,8 @@ import { readGoodMeta } from '../services/goodCache.js';
 import { priceHistory, VALID_RANGES } from '../services/history.js';
 import { price } from '@tgc/shared';
 import { z } from 'zod';
+import { isRegion, DEFAULT_REGION } from '@tgc/shared';
+import { currentLocation } from '../services/location.js';
 
 export const goodsRouter = Router();
 
@@ -26,9 +28,35 @@ async function findGoodOr404(id) {
   return good;
 }
 
-/** FR-2.1 - the market listing. Public; no token required. */
+/**
+ * Which market a request is about.
+ *
+ * A signed-in player sees where they are standing. A guest, or anyone
+ * asking about somewhere else explicitly, gets what they asked for -
+ * looking at another region's prices is how you decide whether to go.
+ */
+async function regionFor(req) {
+  const asked = req.query.region;
+  if (typeof asked === 'string' && isRegion(asked)) return asked;
+
+  const header = req.get('authorization');
+  if (header) {
+    try {
+      const jwt = (await import('jsonwebtoken')).default;
+      const { config } = await import('../config.js');
+      const claims = jwt.verify(header.split(' ')[1], config.JWT_SECRET);
+      return currentLocation(claims.sub);
+    } catch {
+      // Not signed in, or a bad token. The market is public either way.
+    }
+  }
+  return DEFAULT_REGION;
+}
+
+/** FR-2.1 - the market listing, as seen from one region. */
 goodsRouter.get('/', async (req, res) => {
-  res.json({ goods: await listGoodsWithMarket() });
+  const region = await regionFor(req);
+  res.json({ region, goods: await listGoodsWithMarket(region) });
 });
 
 const historyQuerySchema = z.object({
@@ -38,14 +66,35 @@ const historyQuerySchema = z.object({
 /** FR-2.2 - one good in detail. */
 goodsRouter.get('/:id', async (req, res) => {
   const good = await findGoodOr404(req.params.id);
-  const { supply, basePrice } = await readMarketState(good._id.toString());
+  const region = await regionFor(req);
+  const { supply, basePrice } = await readMarketState(good._id.toString(), region);
+
+  // What this good costs in every market, so the decision of where to
+  // carry it is visible in one place.
+  const { REGIONS } = await import('@tgc/shared');
+  const across = [];
+  for (const r of REGIONS) {
+    try {
+      const s = await readMarketState(good._id.toString(), r.id);
+      across.push({
+        region: r.id,
+        name: r.name,
+        price: Math.round(price(s.basePrice, s.supply, good.k, good.n) * 100) / 100,
+        supply: s.supply,
+      });
+    } catch {
+      // A market that has not been warmed yet. Skip rather than invent.
+    }
+  }
 
   res.json({
     good: {
       ...good.toPublic(),
+      region,
       supply,
       basePrice,
       price: Math.round(price(basePrice, supply, good.k, good.n) * 100) / 100,
+      across,
     },
   });
 });
@@ -65,12 +114,14 @@ goodsRouter.get('/:id/quote', validateQuery(quoteQuerySchema), async (req, res) 
   // on this path at all - see the comment on the goodMeta key for what
   // that was costing.
   const good = await readGoodMeta(req.params.id);
-  const { supply, basePrice } = await readMarketState(good.id);
+  const region = await regionFor(req);
+  const { supply, basePrice } = await readMarketState(good.id, region);
   const { side, qty } = req.validatedQuery;
 
   res.json({
     goodId: good.id,
     name: good.name,
+    region,
     ...computeQuote({ basePrice, supply, k: good.k, n: good.n, side, qty }),
   });
 });

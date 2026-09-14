@@ -14,6 +14,7 @@ import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded, readCash, readHoldings } from './accounts.js';
 import { publishPriceChange } from '../realtime/publish.js';
 import { readGoodMeta } from './goodCache.js';
+import { currentLocation, assertNotTravelling, cargoUsed } from './location.js';
 import { Trade } from '../models/Trade.js';
 import { Market } from '../models/Market.js';
 import { User } from '../models/User.js';
@@ -85,9 +86,12 @@ async function loadGood(goodId) {
  * the window the bound protects. A trade that would execute outside it
  * is refused rather than filled at a worse price.
  */
-async function computeLimit({ good, side, qty, slippageBps }) {
+async function computeLimit({ good, side, qty, slippageBps, region }) {
   const redis = getRedis();
-  const [supplyRaw, baseRaw] = await redis.mget(goodSupply(good.id), goodBasePrice(good.id));
+  const [supplyRaw, baseRaw] = await redis.mget(
+    goodSupply(good.id, region),
+    goodBasePrice(good.id, region),
+  );
   if (supplyRaw === null || baseRaw === null) {
     throw ApiError.notFound('market_not_found', 'No live market for that good');
   }
@@ -145,6 +149,29 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   const good = await loadGood(goodId);
 
   await ensureAccountLoaded(userId);
+
+  // You trade where you are standing. Trading from the road would make
+  // travel free - you could carry the cheap prices with you.
+  await assertNotTravelling(userId);
+  const region = await currentLocation(userId);
+
+  // Cargo is the scarce resource. Checked before the script runs,
+  // because the hold belongs to the player rather than the market and
+  // the script has no business knowing about it.
+  if (side === 'buy') {
+    const { User: U } = await import('../models/User.js');
+    const [used, user] = await Promise.all([cargoUsed(userId), U.findById(userId).lean()]);
+    const capacity = user?.cargoCapacity ?? 0;
+    if (used + qty > capacity) {
+      throw ApiError.badRequest('cargo_full', 'Not enough room in the hold', {
+        used,
+        capacity,
+        free: Math.max(0, capacity - used),
+        requested: qty,
+      });
+    }
+  }
+
   const {
     limit,
     supply: supplyBefore,
@@ -154,15 +181,17 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     side,
     qty,
     slippageBps: tolerance,
+    region,
   });
 
   const id = good.id;
   const redis = getRedis();
 
   // Everything that has to be indivisible happens inside this one call.
+  // The only regional thing about it is which keys it is handed.
   const result = await redis.trade(
-    goodSupply(id),
-    goodBasePrice(id),
+    goodSupply(id, region),
+    goodBasePrice(id, region),
     userCash(userId),
     userHoldings(userId),
     ECON_RESERVE,
@@ -196,6 +225,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   // could not be delivered.
   publishPriceChange({
     goodId: good.id,
+    region,
     price: Math.round(price(basePrice, supplyAfter, good.k, good.n) * 100) / 100,
     supply: supplyAfter,
     side,
@@ -206,6 +236,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   const trade = buildLedgerRow({
     userId,
     good,
+    region,
     side,
     qty,
     supplyBefore,
@@ -213,6 +244,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     basePrice,
     notional,
     spread,
+    region,
   });
   recordTrade(trade, cashAfter).catch(() => {});
 
@@ -235,6 +267,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
 function buildLedgerRow({
   userId,
   good,
+  region,
   side,
   qty,
   supplyBefore,
@@ -247,6 +280,7 @@ function buildLedgerRow({
     id: randomUUID(),
     userId,
     goodId: good.id,
+    region,
     side,
     quantity: qty,
     supplyBefore,
@@ -289,7 +323,7 @@ async function recordTrade(row, cashAfter) {
       Trade.create({ ...row, streamId: row.id }),
       User.updateOne({ _id: row.userId }, { $set: { cash: cashAfter }, $inc: { tradeCount: 1 } }),
       Market.updateOne(
-        { goodId: row.goodId },
+        { goodId: row.goodId, region: row.region },
         { $set: { supply: row.supplyAfter }, $inc: { vol24h: row.quantity } },
       ),
       updateHolding({
@@ -333,6 +367,7 @@ async function updateHolding({ userId, goodId, side, qty, cost }) {
  */
 export async function getPortfolio(userId) {
   await ensureAccountLoaded(userId);
+  const region = await currentLocation(userId);
 
   const [cash, held] = await Promise.all([readCash(userId), readHoldings(userId)]);
   const goodIds = [...held.keys()];
@@ -343,7 +378,9 @@ export async function getPortfolio(userId) {
   const costByGood = new Map(mongoHoldings.map((h) => [h.goodId.toString(), h.avgCost]));
 
   const redis = getRedis();
-  const keys = goodIds.flatMap((id) => [goodSupply(id), goodBasePrice(id)]);
+  // Valued at what they would fetch HERE. The same cargo is worth more
+  // somewhere else, which is the point of moving it.
+  const keys = goodIds.flatMap((id) => [goodSupply(id, region), goodBasePrice(id, region)]);
   const live = keys.length > 0 ? await redis.mget(...keys) : [];
 
   let holdingsValue = 0;
@@ -386,7 +423,14 @@ export async function getPortfolio(userId) {
     0,
   );
 
+  const cargo = await cargoUsed(userId);
+  const { User: U2 } = await import('../models/User.js');
+  const me = await U2.findById(userId).lean();
+
   return {
+    region,
+    cargo: { used: cargo, capacity: me?.cargoCapacity ?? 0 },
+    debt: me?.debt ?? 0,
     cash,
     holdingsValue,
     shortsValue,

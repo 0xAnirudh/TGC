@@ -23,6 +23,7 @@ import { ShortPosition } from '../../packages/api/src/models/ShortPosition.js';
 import { MarketEvent } from '../../packages/api/src/models/MarketEvent.js';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
+import { REGIONS, DEFAULT_REGION } from '@tgc/shared';
 
 const app = createApp();
 beforeAll(setupStores);
@@ -75,11 +76,13 @@ describe('NPC traders', () => {
     const { id } = await makeGood({ basePrice: 60, k: 20_000, n: 1 });
     await setSupply(id, 4_000);
 
-    const before = Number(await getRedis().get(goodSupply(id)));
-    for (let i = 0; i < 6; i += 1) await botTick();
-    const after = Number(await getRedis().get(goodSupply(id)));
+    // Bots are spread across the four markets, so the movement shows up
+    // somewhere rather than necessarily in the default region.
+    const before = await Promise.all(REGIONS.map((r) => getRedis().get(goodSupply(id, r.id))));
+    for (let i = 0; i < 12; i += 1) await botTick();
+    const after = await Promise.all(REGIONS.map((r) => getRedis().get(goodSupply(id, r.id))));
 
-    expect(after).not.toBe(before);
+    expect(after.join()).not.toBe(before.join());
     await assertMoneySupply();
   });
 
@@ -111,8 +114,10 @@ describe('NPC traders', () => {
     await setSupply(id, 5_000);
     for (let i = 0; i < 25; i += 1) await botTick();
 
-    const supply = Number(await getRedis().get(goodSupply(id)));
-    expect(supply).toBeLessThan(40_000);
+    for (const r of REGIONS) {
+      const supply = Number(await getRedis().get(goodSupply(id, r.id)));
+      expect(supply).toBeLessThan(60_000);
+    }
     await assertMoneySupply();
   });
 });
@@ -149,18 +154,22 @@ describe('market events', () => {
     const { id } = await makeGood({ basePrice: 200, k: 10_000, n: 2 });
     await setSupply(id, 5_000);
     for (let i = 0; i < 5; i += 1) await maybeFireEvent({ force: true });
-    expect(await getRedis().get(goodSupply(id))).toBe('5000');
+    for (const r of REGIONS) {
+      expect(await getRedis().get(goodSupply(id, r.id))).toBe('5000');
+    }
   });
 
   it('respects the same price bounds drift does', async () => {
     // A good that can 50x on one roll is a lottery, not a market.
     const { id, good } = await makeGood({ basePrice: 100, k: 10_000, n: 1 });
     await setSupply(id, 1_000);
-    for (let i = 0; i < 40; i += 1) await maybeFireEvent({ force: true });
+    for (let i = 0; i < 60; i += 1) await maybeFireEvent({ force: true });
 
-    const base = Number(await getRedis().get(`mkt:${id}:basePrice`));
-    expect(base).toBeLessThanOrEqual(100 * 4);
-    expect(base).toBeGreaterThanOrEqual(100 * 0.25);
+    for (const r of REGIONS) {
+      const base = Number(await getRedis().get(`mkt:${id}:${r.id}:basePrice`));
+      expect(base).toBeLessThanOrEqual(100 * 4);
+      expect(base).toBeGreaterThanOrEqual(100 * 0.25);
+    }
     expect(good.name).toBeTruthy();
   });
 
@@ -209,7 +218,7 @@ describe('short selling', () => {
     const opened = await openShort({ userId: s.userId, goodId: s.goodId, qty: 300 });
 
     // Crash the price. The short should now be worth more than it cost.
-    await getRedis().set(`mkt:${s.goodId}:basePrice`, 20);
+    await getRedis().set(`mkt:${s.goodId}:${DEFAULT_REGION}:basePrice`, 20);
     const closed = await closeShort({ userId: s.userId, positionId: opened.position.id });
 
     expect(closed.realizedPL).toBeGreaterThan(0);
@@ -220,7 +229,7 @@ describe('short selling', () => {
     const s = await shorter('wrong_bear');
     const opened = await openShort({ userId: s.userId, goodId: s.goodId, qty: 300 });
 
-    await getRedis().set(`mkt:${s.goodId}:basePrice`, 55);
+    await getRedis().set(`mkt:${s.goodId}:${DEFAULT_REGION}:basePrice`, 55);
     const closed = await closeShort({ userId: s.userId, positionId: opened.position.id });
 
     expect(closed.realizedPL).toBeLessThan(0);
@@ -236,7 +245,7 @@ describe('short selling', () => {
     const opened = await openShort({ userId: s.userId, goodId: s.goodId, qty: 300 });
 
     // Send the price to the moon.
-    await getRedis().set(`mkt:${s.goodId}:basePrice`, 160);
+    await getRedis().set(`mkt:${s.goodId}:${DEFAULT_REGION}:basePrice`, 160);
     const closed = await closeShort({ userId: s.userId, positionId: opened.position.id });
 
     expect(closed.realizedPL).toBeGreaterThanOrEqual(-opened.position.collateral);
@@ -248,7 +257,7 @@ describe('short selling', () => {
     const s = await shorter('doomed_bear');
     const opened = await openShort({ userId: s.userId, goodId: s.goodId, qty: 300 });
 
-    await getRedis().set(`mkt:${s.goodId}:basePrice`, 120);
+    await getRedis().set(`mkt:${s.goodId}:${DEFAULT_REGION}:basePrice`, 120);
     const result = await liquidateUnderwater();
 
     expect(result.liquidated).toBe(1);

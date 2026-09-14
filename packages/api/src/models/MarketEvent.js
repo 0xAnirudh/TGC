@@ -17,6 +17,10 @@ const marketEventSchema = new mongoose.Schema(
     goodId: { type: mongoose.Schema.Types.ObjectId, ref: 'Good', required: true, index: true },
     goodName: { type: String, required: true },
 
+    /** Which market was hit. An event never hits all four. */
+    region: { type: String, required: true, default: 'harbour' },
+    regionName: { type: String, default: '' },
+
     kind: { type: String, required: true },
     headline: { type: String, required: true },
 

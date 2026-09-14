@@ -3,7 +3,7 @@ import { Good } from '../models/Good.js';
 import { getRedis } from '../redis/client.js';
 import { LB_NETWORTH, userCash, userHoldings, goodSupply, goodBasePrice } from '../redis/keys.js';
 import { log } from '../log.js';
-import { sellBreakdown, maxTradeQty } from '@tgc/shared';
+import { sellBreakdown, maxTradeQty, REGIONS } from '@tgc/shared';
 
 /**
  * Net worth leaderboard.
@@ -29,8 +29,13 @@ async function valueHoldings(userId, goodsById) {
   const entries = Object.entries(held).filter(([, q]) => Number(q) > 0);
   if (entries.length === 0) return 0;
 
-  const keys = entries.flatMap(([goodId]) => [goodSupply(goodId), goodBasePrice(goodId)]);
+  // Cargo is valued at the best price any market would pay for it, since
+  // that is what it is actually worth to a player who can travel.
+  const keys = entries.flatMap(([goodId]) =>
+    REGIONS.flatMap((r) => [goodSupply(goodId, r.id), goodBasePrice(goodId, r.id)]),
+  );
   const live = await redis.mget(...keys);
+  const perGood = REGIONS.length * 2;
 
   let total = 0;
   entries.forEach(([goodId, qtyRaw], i) => {
@@ -38,8 +43,24 @@ async function valueHoldings(userId, goodsById) {
     if (!good) return;
 
     const quantity = Number(qtyRaw);
-    const supply = Number(live[i * 2]);
-    const basePrice = Number(live[i * 2 + 1]);
+
+    // Best of the four markets.
+    let supply = NaN;
+    let basePrice = NaN;
+    let best = -1;
+    for (let r = 0; r < REGIONS.length; r += 1) {
+      const s = Number(live[i * perGood + r * 2]);
+      const b = Number(live[i * perGood + r * 2 + 1]);
+      if (!Number.isFinite(s) || !Number.isFinite(b)) continue;
+      const sellable = Math.min(quantity, s, maxTradeQty(s));
+      if (sellable <= 0) continue;
+      const worth = sellBreakdown(b, s, sellable, good.k, good.n).net / sellable;
+      if (worth > best) {
+        best = worth;
+        supply = s;
+        basePrice = b;
+      }
+    }
     if (!Number.isFinite(supply) || !Number.isFinite(basePrice)) return;
 
     // Valued at what selling would actually return - spread taken, curve

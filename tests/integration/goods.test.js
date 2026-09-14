@@ -8,6 +8,7 @@ import { Market } from '../../packages/api/src/models/Market.js';
 import { price, buyCost, sellBreakdown } from '@tgc/shared';
 import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
 import { makeGood, setSupply } from '../helpers/market.js';
+import { DEFAULT_REGION } from '@tgc/shared';
 
 const app = createApp();
 
@@ -139,10 +140,10 @@ describe('GET /goods/:id/quote', () => {
 describe('warming redis from mongo', () => {
   it('fills in a good redis has never seen', async () => {
     const { id } = await makeGood({ supply: 0 });
-    await getRedis().del(goodSupply(id));
+    await getRedis().del(goodSupply(id, DEFAULT_REGION));
 
     await warmMarketState();
-    expect(await getRedis().get(goodSupply(id))).toBe('0');
+    expect(await getRedis().get(goodSupply(id, DEFAULT_REGION))).toBe('0');
   });
 
   it('never overwrites live state with a stale mongo value', async () => {
@@ -150,10 +151,10 @@ describe('warming redis from mongo', () => {
     // have actually produced; Mongo's copy lags. A warm that overwrote
     // would silently roll the market back on every restart.
     const { id } = await makeGood({ supply: 0 });
-    await setSupply(id, 47_000);
-    await Market.updateOne({ goodId: id }, { supply: 0 });
+    await setSupply(id, 47_000, DEFAULT_REGION);
+    await Market.updateOne({ goodId: id, region: DEFAULT_REGION }, { supply: 0 });
 
     await warmMarketState();
-    expect(await getRedis().get(goodSupply(id))).toBe('47000');
+    expect(await getRedis().get(goodSupply(id, DEFAULT_REGION))).toBe('47000');
   });
 });

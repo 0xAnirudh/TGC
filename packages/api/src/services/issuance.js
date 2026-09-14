@@ -2,12 +2,26 @@ import { Good } from '../models/Good.js';
 import { Market } from '../models/Market.js';
 import { User } from '../models/User.js';
 import { getRedis } from '../redis/client.js';
-import { goodSupply, goodBasePrice, userCash, ECON_BURNED } from '../redis/keys.js';
+import {
+  goodSupply,
+  goodBasePrice,
+  userCash,
+  ECON_BURNED,
+  ECON_RESERVE,
+  ECON_GRANTED,
+} from '../redis/keys.js';
 import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded } from './accounts.js';
 import { cacheGoodMeta } from './goodCache.js';
 import { log } from '../log.js';
-import { MIN_CURVE_N, MAX_CURVE_N, MIN_CURVE_K } from '@tgc/shared';
+import {
+  MIN_CURVE_N,
+  MAX_CURVE_N,
+  MIN_CURVE_K,
+  REGIONS,
+  openingStockFor,
+  reserveAt,
+} from '@tgc/shared';
 
 /**
  * Player-issued goods.
@@ -119,10 +133,46 @@ export async function issueGood({ userId, name, colorToken, k, n, basePrice }) {
   const cashAfter = Number(rest[0]);
 
   const good = await Good.create({ name, nameLower, colorToken, issuerId: user._id, k, n });
-  await Market.create({ goodId: good._id, basePrice, supply: 0, vol24h: 0 });
-
   const id = good._id.toString();
-  await getRedis().mset(goodSupply(id), 0, goodBasePrice(id), basePrice);
+
+  // A new good launches in all four markets at once, with the same
+  // regional biases the seeded goods have - otherwise it would be the
+  // only good with no arbitrage and nobody would carry it anywhere.
+  //
+  // Each market opens with the same stock every other good has. Without
+  // it nobody could sell the thing anywhere: a market at zero supply has
+  // taken in nothing and can pay out nothing.
+  const stock = openingStockFor(k);
+  let openingReserve = 0;
+
+  for (const region of REGIONS) {
+    const regionalBase = Math.max(5, Math.round(basePrice * region.priceBias));
+    await Market.create({
+      goodId: good._id,
+      region: region.id,
+      basePrice: regionalBase,
+      launchPrice: regionalBase,
+      openingStock: stock,
+      supply: stock,
+      vol24h: 0,
+    });
+    await getRedis().mset(
+      goodSupply(id, region.id),
+      stock,
+      goodBasePrice(id, region.id),
+      regionalBase,
+    );
+    openingReserve += Math.round(reserveAt(regionalBase, stock, k, n));
+  }
+
+  // Opening stock is backed by real Notes, so both counters have to know
+  // or the invariant shows a reserve holding Notes nobody granted.
+  await getRedis()
+    .multi()
+    .incrby(ECON_RESERVE, openingReserve)
+    .incrby(ECON_GRANTED, openingReserve)
+    .exec();
+
   await cacheGoodMeta(good);
   await User.updateOne({ _id: userId }, { $set: { cash: cashAfter } });
 

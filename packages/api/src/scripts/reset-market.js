@@ -9,6 +9,8 @@ import { PriceSnapshot } from '../models/PriceSnapshot.js';
 import { MarketEvent } from '../models/MarketEvent.js';
 import { Newspaper } from '../models/Newspaper.js';
 import { log } from '../log.js';
+import { reserveAt, openingStockFor } from '@tgc/shared';
+import { Good } from '../models/Good.js';
 
 /**
  * Put the world back to its starting state.
@@ -43,7 +45,12 @@ const bots = await User.find({ isBot: true }).lean();
 const doomed = [...loadTest, ...(wipeAll ? await User.find({}).lean() : bots)];
 
 for (const u of doomed) {
-  await redis.del(`user:${u._id}:cash`, `user:${u._id}:holdings`);
+  await redis.del(
+    `user:${u._id}:cash`,
+    `user:${u._id}:holdings`,
+    `user:${u._id}:location`,
+    `user:${u._id}:arrivesAt`,
+  );
 }
 await User.deleteMany({ _id: { $in: doomed.map((u) => u._id) } });
 
@@ -58,10 +65,22 @@ await Promise.all([
 
 // Markets back to zero supply and their launch price.
 const markets = await Market.find().lean();
+const goodsById = new Map((await Good.find().lean()).map((g) => [g._id.toString(), g]));
+let openingReserve = 0;
+
 for (const m of markets) {
   const id = m.goodId.toString();
-  await redis.mset(`mkt:${id}:supply`, 0, `mkt:${id}:basePrice`, m.basePrice);
-  await Market.updateOne({ goodId: m.goodId }, { $set: { supply: 0, vol24h: 0 } });
+  const good = goodsById.get(id);
+  const stock = m.openingStock ?? (good ? openingStockFor(good.k) : 0);
+  const base = m.launchPrice ?? m.basePrice;
+
+  await redis.mset(`mkt:${id}:${m.region}:supply`, stock, `mkt:${id}:${m.region}:basePrice`, base);
+  await Market.updateOne(
+    { goodId: m.goodId, region: m.region },
+    { $set: { supply: stock, vol24h: 0, basePrice: base } },
+  );
+
+  if (good && stock > 0) openingReserve += Math.round(reserveAt(base, stock, good.k, good.n));
 }
 
 // The economy counters have to be recomputed, not zeroed: the remaining
@@ -71,10 +90,24 @@ const remaining = await User.find().lean();
 const granted = remaining.reduce((sum, u) => sum + u.startingGrant, 0);
 for (const u of remaining) {
   await redis.set(`user:${u._id}:cash`, u.startingGrant);
-  await redis.del(`user:${u._id}:holdings`);
-  await User.updateOne({ _id: u._id }, { $set: { cash: u.startingGrant, tradeCount: 0 } });
+  await redis.del(`user:${u._id}:holdings`, `user:${u._id}:arrivesAt`);
+  await redis.set(`user:${u._id}:location`, 'harbour');
+  await User.updateOne(
+    { _id: u._id },
+    {
+      $set: { cash: u.startingGrant, tradeCount: 0, location: 'harbour', arrivesAt: null, debt: 0 },
+    },
+  );
 }
-await redis.mset('econ:granted', granted, 'econ:reserve', 0, 'econ:burned', 0);
+// The opening stock is backed by real Notes, so it counts in both.
+await redis.mset(
+  'econ:granted',
+  granted + openingReserve,
+  'econ:reserve',
+  openingReserve,
+  'econ:burned',
+  0,
+);
 await redis.del('lb:networth');
 
 log.info('market reset', {

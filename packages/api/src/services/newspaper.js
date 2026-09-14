@@ -4,6 +4,7 @@ import { User } from '../models/User.js';
 import { PriceSnapshot } from '../models/PriceSnapshot.js';
 import { Newspaper } from '../models/Newspaper.js';
 import { log } from '../log.js';
+import { REGIONS } from '@tgc/shared';
 
 /**
  * The daily newspaper.
@@ -49,21 +50,37 @@ async function movements(since, until) {
   const out = [];
 
   for (const good of goods) {
-    const [first, last] = await Promise.all([
-      PriceSnapshot.findOne({ goodId: good._id, at: { $gte: since, $lt: until } })
-        .sort({ at: 1 })
-        .lean(),
-      PriceSnapshot.findOne({ goodId: good._id, at: { $gte: since, $lt: until } })
-        .sort({ at: -1 })
-        .lean(),
-    ]);
+    for (const region of REGIONS) {
+      // Compared WITHIN one market. Taking the first and last snapshot
+      // across all regions compares the harbour's opening price against
+      // the frontier's closing one, which is not a movement - it is a
+      // price gap, and it would report every good as a wild mover every
+      // single day.
+      const [first, last] = await Promise.all([
+        PriceSnapshot.findOne({
+          goodId: good._id,
+          region: region.id,
+          at: { $gte: since, $lt: until },
+        })
+          .sort({ at: 1 })
+          .lean(),
+        PriceSnapshot.findOne({
+          goodId: good._id,
+          region: region.id,
+          at: { $gte: since, $lt: until },
+        })
+          .sort({ at: -1 })
+          .lean(),
+      ]);
 
-    if (!first || !last || first.price === 0 || first === last) continue;
-    out.push({
-      name: good.name,
-      price: last.price,
-      changePct: Math.round(((last.price - first.price) / first.price) * 10_000) / 100,
-    });
+      if (!first || !last || first.price === 0 || String(first._id) === String(last._id)) continue;
+
+      out.push({
+        name: `${good.name} in ${region.name}`,
+        price: last.price,
+        changePct: Math.round(((last.price - first.price) / first.price) * 10_000) / 100,
+      });
+    }
   }
   return out;
 }

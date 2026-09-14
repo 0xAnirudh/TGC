@@ -34,6 +34,18 @@ function assertSafeTargets() {
 export async function setupStores() {
   assertSafeTargets();
   await Promise.all([connectMongo({ maxAttempts: 3 }), connectRedis()]);
+
+  // Mongoose creates the indexes a schema declares and never drops the
+  // ones it used to. Market.goodId was unique when there was one market
+  // per good; it is unique per good PER REGION now, and the stale index
+  // sits in the test database refusing the second region with a
+  // duplicate-key error naming a constraint that is no longer in the
+  // code. The dev database has the same problem - see the seed script.
+  try {
+    await mongoose.connection.db.collection('markets').dropIndex('goodId_1');
+  } catch {
+    // Already gone, which is the normal case after the first run.
+  }
 }
 
 export async function resetStores() {

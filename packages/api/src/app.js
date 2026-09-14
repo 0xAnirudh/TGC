@@ -11,6 +11,7 @@ import { issueRouter } from './routes/issue.js';
 import { newspaperRouter } from './routes/newspaper.js';
 import { shortsRouter } from './routes/shorts.js';
 import { eventsRouter } from './routes/events.js';
+import { worldRouter } from './routes/world.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -68,6 +69,7 @@ export function createApp() {
   app.use('/newspaper', newspaperRouter);
   app.use('/shorts', shortsRouter);
   app.use('/events', eventsRouter);
+  app.use('/world', worldRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });

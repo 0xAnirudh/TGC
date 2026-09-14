@@ -24,6 +24,9 @@ const shortPositionSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     goodId: { type: mongoose.Schema.Types.ObjectId, ref: 'Good', required: true, index: true },
 
+    /** Where it was opened. A short is a promise to return units here. */
+    region: { type: String, required: true, default: 'harbour' },
+
     /** Units borrowed and sold. */
     quantity: { type: Number, required: true, min: 1 },
 
@@ -65,6 +68,7 @@ shortPositionSchema.methods.toPublic = function toPublic() {
   return {
     id: this._id.toString(),
     goodId: this.goodId.toString(),
+    region: this.region,
     quantity: this.quantity,
     proceeds: this.proceeds,
     collateral: this.collateral,

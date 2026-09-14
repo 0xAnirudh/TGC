@@ -12,8 +12,9 @@ import {
 } from '../../packages/api/src/redis/keys.js';
 import { User } from '../../packages/api/src/models/User.js';
 import { buyCost, sellBreakdown, STARTING_GRANT } from '@tgc/shared';
-import { setupStores, resetStores, teardownStores } from '../helpers/stores.js';
+import { setupStores, resetStores, teardownStores, settleLedger } from '../helpers/stores.js';
 import { makeGood, setSupply, makePlayerDirect } from '../helpers/market.js';
+import { DEFAULT_REGION } from '@tgc/shared';
 
 const app = createApp();
 
@@ -143,9 +144,14 @@ describe('POST /trades', () => {
   });
 
   it('rejects a trade over the size cap', async () => {
-    const { token } = await makePlayer();
+    const { token, id: userId } = await makePlayer();
     const { id } = await makeGood();
     await setSupply(id, 10_000);
+
+    // The hold is checked before the market's size cap, so a default
+    // 500-unit hold would refuse this as cargo_full and the market rule
+    // would never be reached. This test is about the market rule.
+    await User.updateOne({ _id: userId }, { $set: { cargoCapacity: 1_000_000 } });
 
     const res = await trade(token, { goodId: id, side: 'buy', qty: 5_000 }).expect(400);
     expect(res.body.error).toBe('trade_too_large');
@@ -196,6 +202,11 @@ describe('GET /portfolio', () => {
     await setSupply(id, 10_000);
     await trade(token, { goodId: id, side: 'buy', qty: 100 }).expect(201);
 
+    // Cost basis lives in the Mongo projection, which the request does
+    // not wait for. Without settling first, avgCost reads as zero and
+    // the position looks like pure profit.
+    await settleLedger(1);
+
     const res = await request(app)
       .get('/portfolio')
       .set('Authorization', `Bearer ${token}`)
@@ -232,7 +243,7 @@ describe('concurrency', () => {
       trade(b.token, { goodId: id, side: 'buy', qty: 100, slippageBps: 500 }),
     ]);
 
-    expect(Number(await getRedis().get(goodSupply(id)))).toBe(10_200);
+    expect(Number(await getRedis().get(goodSupply(id, DEFAULT_REGION)))).toBe(10_200);
     await assertMoneySupply();
   });
 
@@ -255,7 +266,9 @@ describe('concurrency', () => {
     // Supply must have moved by exactly 100 per accepted trade. Not
     // approximately - exactly. Any drift means units were created or
     // destroyed by interleaving.
-    expect(Number(await getRedis().get(goodSupply(id)))).toBe(100_000 + accepted * 100);
+    expect(Number(await getRedis().get(goodSupply(id, DEFAULT_REGION)))).toBe(
+      100_000 + accepted * 100,
+    );
     await assertMoneySupply();
   });
 

@@ -26,6 +26,9 @@ const tradeSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     goodId: { type: mongoose.Schema.Types.ObjectId, ref: 'Good', required: true, index: true },
 
+    /** Which market this happened in. Replay needs it to rebuild the right curve. */
+    region: { type: String, required: true, index: true },
+
     side: { type: String, required: true, enum: ['buy', 'sell'] },
     quantity: { type: Number, required: true, min: 1 },
 

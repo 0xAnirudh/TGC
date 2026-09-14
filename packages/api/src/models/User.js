@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { REGION_IDS, DEFAULT_REGION, BASE_CARGO } from '@tgc/shared';
 
 /**
  * A player account.
@@ -65,6 +66,35 @@ const userSchema = new mongoose.Schema(
 
     lastBonusAt: { type: Date, default: null },
 
+    /** Which market this player is standing in. Trades use its prices. */
+    location: { type: String, enum: REGION_IDS, default: DEFAULT_REGION, index: true },
+
+    /** Set while travelling. Trading is refused until it passes. */
+    arrivesAt: { type: Date, default: null },
+
+    /**
+     * How many units this player can carry, across all goods at once.
+     *
+     * The constraint that turns the game into a series of decisions.
+     * Without it the right move is always "buy everything cheap, sell
+     * everything dear" and there is nothing to choose; with it, cargo
+     * space is the scarce resource and every purchase is a bet about
+     * which good deserves the room.
+     */
+    cargoCapacity: { type: Number, default: BASE_CARGO, min: 0 },
+
+    /**
+     * Borrowed Notes, and what they have grown to.
+     *
+     * Debt is a faucet at the moment it is issued - the Notes are real
+     * and enter circulation - so borrowing counts against ECON_GRANTED
+     * and repayment counts back out. The interest is the interesting
+     * part: it is charged against the debt, not minted, so a growing
+     * balance costs the player without adding Notes to the world.
+     */
+    debt: { type: Number, default: 0, min: 0 },
+    debtTakenAt: { type: Date, default: null },
+
     /**
      * Bot traders.
      *
@@ -122,6 +152,10 @@ userSchema.methods.toPrivate = function toPrivate() {
     netWorth: this.netWorthCached,
     portfolioPublic: this.portfolioPublic,
     memberSince: this.createdAt,
+    location: this.location,
+    arrivesAt: this.arrivesAt,
+    cargoCapacity: this.cargoCapacity,
+    debt: this.debt,
   };
 };
 

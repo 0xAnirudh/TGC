@@ -8,11 +8,17 @@
  * route is a key the rebuild will silently miss.
  */
 
-/** Live supply of a good. Written only by trade.lua from Phase 5. */
-export const goodSupply = (goodId) => `mkt:${goodId}:supply`;
-
-/** Live base price of a good. Moved by the drift job from Phase 8. */
-export const goodBasePrice = (goodId) => `mkt:${goodId}:basePrice`;
+/**
+ * Live supply and base price, PER REGION.
+ *
+ * Each region holds its own position on the curve, so the same good can
+ * be cheap in one place and dear in another. See shared/regions.js for
+ * why this is separate supply rather than a price multiplier - the short
+ * version is that a multiplier lets arbitrage take more out of the curve
+ * reserve than was paid in, which mints Notes.
+ */
+export const goodSupply = (goodId, region) => `mkt:${goodId}:${region}:supply`;
+export const goodBasePrice = (goodId, region) => `mkt:${goodId}:${region}:basePrice`;
 
 /**
  * A good's immutable identity and curve shape: name, colour, k, n.
@@ -46,6 +52,16 @@ export const userCash = (userId) => `user:${userId}:cash`;
  * the check and both succeed.
  */
 export const userHoldings = (userId) => `user:${userId}:holdings`;
+
+/**
+ * Where a player is, and when they arrive if they are in transit.
+ *
+ * Held in Redis because the trade path needs the location on every
+ * request to know which region's prices apply, and that is not worth a
+ * Mongo read. The User document keeps the durable copy.
+ */
+export const userLocation = (userId) => `user:${userId}:location`;
+export const userArrivesAt = (userId) => `user:${userId}:arrivesAt`;
 
 /**
  * Running total of every Note ever granted.

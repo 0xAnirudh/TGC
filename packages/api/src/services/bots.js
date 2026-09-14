@@ -4,7 +4,7 @@ import { getRedis } from '../redis/client.js';
 import { goodSupply, goodBasePrice, userCash, userHoldings } from '../redis/keys.js';
 import { executeTrade } from './trading.js';
 import { log } from '../log.js';
-import { price, maxTradeQty, STARTING_GRANT } from '@tgc/shared';
+import { price, maxTradeQty, STARTING_GRANT, REGIONS } from '@tgc/shared';
 
 /**
  * NPC traders.
@@ -213,6 +213,10 @@ export async function ensureBots() {
           startingGrant: BOT_GRANT,
           isBot: true,
           botStrategy: strategy.name,
+          // Spread across the four markets, so no region sits still.
+          location: REGIONS[nameIndex % REGIONS.length].id,
+          // Bots carry plenty, so the cargo limit never silences them.
+          cargoCapacity: 50_000,
         });
       } catch (err) {
         // One bad bot must not take the roster down with it. The first
@@ -264,9 +268,14 @@ export async function botTick({ random = Math.random } = {}) {
     const good = goods[Math.floor(random() * goods.length)];
     const id = good._id.toString();
 
+    // Bots stay put rather than travelling. They are here to keep each
+    // market moving, and a bot that spent half its life on the road
+    // would leave three regions quiet at any moment.
+    const region = bot.location ?? REGIONS[0].id;
+
     const [supplyRaw, baseRaw, cashRaw, heldRaw] = await Promise.all([
-      redis.get(goodSupply(id)),
-      redis.get(goodBasePrice(id)),
+      redis.get(goodSupply(id, region)),
+      redis.get(goodBasePrice(id, region)),
       redis.get(userCash(bot._id.toString())),
       redis.hget(userHoldings(bot._id.toString()), id),
     ]);
@@ -281,12 +290,12 @@ export async function botTick({ random = Math.random } = {}) {
 
     // Launch price is the market's original basePrice, which is what
     // "how far has this run" is measured against.
-    const market = markets.get(id);
-    const launchBase = market?.basePrice ?? basePrice;
+    const market = markets.get(`${id}:${region}`);
+    const launchBase = market?.launchPrice ?? basePrice;
     const launchPrice = price(launchBase, 0, good.k, good.n);
 
     const decision = strategy.decide({
-      changePct: recentChange(id),
+      changePct: recentChange(`${id}:${region}`),
       fromLaunchPct: ((current - launchPrice) / launchPrice) * 100,
       // How far this bot is up on what it holds, so it has a reason to
       // take profit rather than only ever accumulating.
@@ -334,9 +343,9 @@ export async function botTick({ random = Math.random } = {}) {
       });
       traded += 1;
       actions.push(`${bot.username} ${decision.side} ${qty} ${good.name}`);
-      noteTrade(id, decision.side);
-      if (decision.side === 'buy') entryPrices.set(`${bot._id}:${id}`, current);
-      else entryPrices.delete(`${bot._id}:${id}`);
+      noteTrade(`${id}:${region}`, decision.side);
+      if (decision.side === 'buy') entryPrices.set(`${bot._id}:${id}:${region}`, current);
+      else entryPrices.delete(`${bot._id}:${id}:${region}`);
     } catch {
       // Refused for funds, holdings, size or slippage - exactly as a
       // person would be. Nothing to do about it.

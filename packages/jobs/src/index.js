@@ -8,6 +8,7 @@ import { generateNewspaper } from '@tgc/api/src/services/newspaper.js';
 import { ensureBots, botTick } from '@tgc/api/src/services/bots.js';
 import { maybeFireEvent } from '@tgc/api/src/services/events.js';
 import { liquidateUnderwater } from '@tgc/api/src/services/shorting.js';
+import { accrueInterest } from '@tgc/api/src/services/debt.js';
 import { log } from '@tgc/api/src/log.js';
 import { config } from '@tgc/api/src/config.js';
 
@@ -73,6 +74,14 @@ const JOBS = [
     schedule: config.REVALUE_CRON,
     lockTtlMs: 110_000,
     run: () => revalueAll(),
+  },
+  {
+    // Interest compounds whether or not anyone is playing. That is the
+    // point of a debt clock - it makes a stalled position a problem.
+    name: 'interest',
+    schedule: '* * * * *',
+    lockTtlMs: 50_000,
+    run: () => accrueInterest(),
   },
   {
     name: 'newspaper',

@@ -5,7 +5,7 @@ import { getRedis } from '../redis/client.js';
 import { goodSupply, goodBasePrice } from '../redis/keys.js';
 import { publishPriceChange } from '../realtime/publish.js';
 import { log } from '../log.js';
-import { price } from '@tgc/shared';
+import { price, REGIONS } from '@tgc/shared';
 import { MIN_BASE_PRICE_RATIO, MAX_BASE_PRICE_RATIO } from './drift.js';
 
 /**
@@ -82,8 +82,16 @@ export async function maybeFireEvent({ random = Math.random, force = false } = {
   const template = EVENTS[Math.floor(random() * EVENTS.length)];
   const id = good._id.toString();
 
+  // An event hits ONE market, not all four. That is what makes it worth
+  // reacting to: a shortage in the harbour opens a gap against the
+  // frontier, and somebody has to carry goods there to close it.
+  const region = REGIONS[Math.floor(random() * REGIONS.length)];
+
   const redis = getRedis();
-  const [supplyRaw, baseRaw] = await redis.mget(goodSupply(id), goodBasePrice(id));
+  const [supplyRaw, baseRaw] = await redis.mget(
+    goodSupply(id, region.id),
+    goodBasePrice(id, region.id),
+  );
   if (supplyRaw === null || baseRaw === null) return null;
 
   const supply = Number(supplyRaw);
@@ -92,8 +100,8 @@ export async function maybeFireEvent({ random = Math.random, force = false } = {
   const [lo, hi] = template.bps;
   const impactBps = Math.round(lo + random() * (hi - lo));
 
-  const market = await Market.findOne({ goodId: good._id }).lean();
-  const launchPrice = market?.basePrice ?? basePrice;
+  const market = await Market.findOne({ goodId: good._id, region: region.id }).lean();
+  const launchPrice = market?.launchPrice ?? basePrice;
 
   // The same bounds drift respects. An event is a bigger jolt, not a
   // licence to send a price anywhere - a good that can 50x on one roll
@@ -109,14 +117,19 @@ export async function maybeFireEvent({ random = Math.random, force = false } = {
   const priceBefore = price(basePrice, supply, good.k, good.n);
   const priceAfter = price(nextBase, supply, good.k, good.n);
 
-  await redis.set(goodBasePrice(id), nextBase);
-  await Market.updateOne({ goodId: good._id }, { $set: { basePrice: nextBase } });
+  await redis.set(goodBasePrice(id, region.id), nextBase);
+  await Market.updateOne(
+    { goodId: good._id, region: region.id },
+    { $set: { basePrice: nextBase } },
+  );
 
   const event = await MarketEvent.create({
     goodId: good._id,
     goodName: good.name,
+    region: region.id,
+    regionName: region.name,
     kind: template.kind,
-    headline: template.headline(good.name),
+    headline: `${template.headline(good.name)} — ${region.name}`,
     impactBps,
     priceBefore: Math.round(priceBefore * 100) / 100,
     priceAfter: Math.round(priceAfter * 100) / 100,
@@ -126,6 +139,7 @@ export async function maybeFireEvent({ random = Math.random, force = false } = {
   // rather than something you discover on your next refresh.
   await publishPriceChange({
     goodId: id,
+    region: region.id,
     price: Math.round(priceAfter * 100) / 100,
     supply,
     side: 'event',
@@ -134,6 +148,7 @@ export async function maybeFireEvent({ random = Math.random, force = false } = {
 
   log.info('market event', {
     good: good.name,
+    region: region.id,
     kind: template.kind,
     impactBps,
     from: event.priceBefore,
