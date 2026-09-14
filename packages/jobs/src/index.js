@@ -4,6 +4,7 @@ import { connectRedis, disconnectRedis } from '@tgc/api/src/redis/client.js';
 import { withJobLock } from '@tgc/api/src/services/jobLock.js';
 import { driftTick } from '@tgc/api/src/services/drift.js';
 import { revalueAll } from '@tgc/api/src/services/leaderboard.js';
+import { generateNewspaper } from '@tgc/api/src/services/newspaper.js';
 import { log } from '@tgc/api/src/log.js';
 
 /**
@@ -37,6 +38,16 @@ const JOBS = [
     schedule: '*/2 * * * *',
     lockTtlMs: 110_000,
     run: () => revalueAll(),
+  },
+  {
+    name: 'newspaper',
+    // Hourly rather than once at midnight. The paper is upserted on its
+    // date, so an hourly run keeps today's edition current instead of
+    // showing a stale one all day, and a missed midnight tick does not
+    // cost a whole edition.
+    schedule: '0 * * * *',
+    lockTtlMs: 110_000,
+    run: () => generateNewspaper(),
   },
 ];
 

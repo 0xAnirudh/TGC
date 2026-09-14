@@ -7,6 +7,8 @@ import { tradesRouter } from './routes/trades.js';
 import { portfolioRouter } from './routes/portfolio.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
 import { playersRouter } from './routes/players.js';
+import { issueRouter } from './routes/issue.js';
+import { newspaperRouter } from './routes/newspaper.js';
 import { log } from './log.js';
 import { ApiError } from './util/errors.js';
 
@@ -35,6 +37,8 @@ export function createApp() {
   app.use('/portfolio', portfolioRouter);
   app.use('/leaderboard', leaderboardRouter);
   app.use('/players', playersRouter);
+  app.use('/issue', issueRouter);
+  app.use('/newspaper', newspaperRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path });

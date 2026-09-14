@@ -16,7 +16,9 @@ beforeAll(setupStores);
 afterAll(teardownStores);
 beforeEach(async () => {
   await resetStores();
-  await getRedis().xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM').catch(() => {});
+  await getRedis()
+    .xgroup('CREATE', STREAM_TRADES, 'relay', '0', 'MKSTREAM')
+    .catch(() => {});
 });
 
 const trade = (token, body) =>
