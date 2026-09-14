@@ -68,12 +68,21 @@ cp .env.example .env                 # fill in MONGO_URI and JWT_SECRET
 npm install
 npm run seed --workspace=@tgc/api    # create the starting market
 
-# 3. run all four processes, each in its own terminal
-npm run dev --workspace=@tgc/api     # the API            :4000
-npm run dev --workspace=@tgc/relay   # stream -> mongo projector
-npm run dev --workspace=@tgc/jobs    # drift, leaderboard, newspaper
-npm run dev --workspace=@tgc/web     # the frontend       :5173
+# 3. run everything
+npm run dev
 ```
+
+That starts all four processes in one terminal with coloured prefixes:
+
+```
+[api]    the API                        :4000
+[relay]  trade stream -> mongo          (no port)
+[jobs]   drift, leaderboard, newspaper  (no port)
+[web]    the frontend                   :5173
+```
+
+To run one at a time instead: `npm run dev:api`, `dev:relay`,
+`dev:jobs`, `dev:web`.
 
 Then open <http://localhost:5173>, create an account, and trade. You
 start with 100,000 Notes.
@@ -81,6 +90,21 @@ start with 100,000 Notes.
 **The API alone is enough to trade**, but without the relay nothing
 reaches MongoDB, and without the job runner prices never drift, the
 leaderboard stays empty and no newspaper is printed.
+
+### In VS Code
+
+`.vscode/` is committed, so opening the folder gives you:
+
+- **Run and Debug → "Debug: full backend"** — API, relay and jobs under
+  one debugger. Put a breakpoint in `packages/api/src/services/trading.js`
+  and place a trade from the browser to watch a request go through.
+- **Run and Debug → "Debug: tests"** — step through a failing assertion
+  instead of guessing at it.
+- **Terminal → Run Task** — run everything, seed, rebuild, test, load
+  test.
+
+The frontend is not in the debug compound on purpose; React is better
+debugged in the browser's own devtools.
 
 `GET /health` is readiness: it checks both stores and answers 503 while
 either is down, naming which one. `GET /health/live` is liveness and
