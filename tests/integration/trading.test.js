@@ -48,6 +48,22 @@ async function assertMoneySupply() {
 }
 
 describe('POST /trades', () => {
+  it('gives legacy accounts the base hold capacity', async () => {
+    const { token, id: userId } = await makePlayer();
+    const { id } = await makeGood();
+    await setSupply(id, 10_000);
+    await User.updateOne({ _id: userId }, { $unset: { cargoCapacity: 1 } });
+
+    const cargo = await request(app)
+      .get('/world/cargo')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(cargo.body.capacity).toBe(500);
+    expect(cargo.body.free).toBe(500);
+
+    await trade(token, { goodId: id, side: 'buy', qty: 100 }).expect(201);
+  });
+
   it('buys, moving cash into the reserve and supply up', async () => {
     const { token } = await makePlayer();
     const { id, basePrice, k, n } = await makeGood();

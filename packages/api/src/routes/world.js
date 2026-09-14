@@ -8,7 +8,7 @@ import { User } from '../models/User.js';
 import { getRedis } from '../redis/client.js';
 import { userCash } from '../redis/keys.js';
 import { ApiError } from '../util/errors.js';
-import { cargoUpgradeCost, CARGO_STEP, MAX_CARGO, isRegion } from '@tgc/shared';
+import { cargoUpgradeCost, CARGO_STEP, MAX_CARGO, BASE_CARGO, isRegion } from '@tgc/shared';
 
 export const worldRouter = Router();
 
@@ -58,11 +58,12 @@ worldRouter.get('/cargo', authenticate, async (req, res) => {
  */
 worldRouter.post('/cargo/upgrade', authenticate, requireUser, async (req, res) => {
   const user = req.user;
-  if (user.cargoCapacity >= MAX_CARGO) {
+  const currentCapacity = user.cargoCapacity ?? BASE_CARGO;
+  if (currentCapacity >= MAX_CARGO) {
     throw ApiError.badRequest('cargo_maxed', 'Your hold is already as large as it gets');
   }
 
-  const cost = cargoUpgradeCost(user.cargoCapacity);
+  const cost = cargoUpgradeCost(currentCapacity);
   const redis = getRedis();
   const cash = Number((await redis.get(userCash(user._id.toString()))) ?? user.cash);
 
@@ -79,7 +80,7 @@ worldRouter.post('/cargo/upgrade', authenticate, requireUser, async (req, res) =
     .incrby('econ:burned', cost)
     .exec();
 
-  const capacity = Math.min(MAX_CARGO, user.cargoCapacity + CARGO_STEP);
+  const capacity = Math.min(MAX_CARGO, currentCapacity + CARGO_STEP);
   await User.updateOne(
     { _id: user._id },
     { $set: { cargoCapacity: capacity }, $inc: { cash: -cost } },

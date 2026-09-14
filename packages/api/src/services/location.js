@@ -10,6 +10,7 @@ import {
   travelCost,
   travelSeconds,
   DEFAULT_REGION,
+  BASE_CARGO,
 } from '@tgc/shared';
 
 /**
@@ -114,10 +115,11 @@ export async function cargoUsed(userId) {
 export async function cargoState(userId) {
   const user = await User.findById(userId).lean();
   const used = await cargoUsed(userId);
+  const capacity = user?.cargoCapacity ?? BASE_CARGO;
   return {
     used,
-    capacity: user?.cargoCapacity ?? 0,
-    free: Math.max(0, (user?.cargoCapacity ?? 0) - used),
+    capacity,
+    free: Math.max(0, capacity - used),
   };
 }
 

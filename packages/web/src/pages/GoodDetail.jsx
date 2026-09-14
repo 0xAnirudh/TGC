@@ -259,11 +259,21 @@ function ShortPanel({ good, auth, onDone }) {
 function TradePanel({ good, auth, onDone }) {
   const [side, setSide] = useState('buy');
   const [qty, setQty] = useState(100);
+  const [cargo, setCargo] = useState(null);
   const [slippage, setSlippage] = useState(100);
   const [quote, setQuote] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const loadCargo = () =>
+    api('/world/cargo')
+      .then(setCargo)
+      .catch(() => setCargo(null));
+
+  useEffect(() => {
+    if (auth.user) loadCargo();
+  }, [auth.user]);
 
   // Re-quote whenever the inputs change. The quote is non-binding - by
   // the time you act on it someone else may have moved the price, which
@@ -302,6 +312,7 @@ function TradePanel({ good, auth, onDone }) {
       });
       setResult(res);
       await auth.refresh();
+      await loadCargo();
       onDone();
     } catch (err) {
       setError(err.message);
@@ -324,7 +335,13 @@ function TradePanel({ good, auth, onDone }) {
           </div>
           <div className="col">
             <label>Quantity</label>
-            <input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
+            <input
+              type="number"
+              min="1"
+              max={side === 'buy' && cargo ? cargo.free : undefined}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
           </div>
           <div className="col">
             <label>Max slippage (basis points)</label>
@@ -337,6 +354,13 @@ function TradePanel({ good, auth, onDone }) {
             />
           </div>
         </div>
+
+        {side === 'buy' && cargo && (
+          <p className="muted" style={{ marginTop: 12 }}>
+            Hold space: <span className="num">{notes(cargo.free)}</span> free of{' '}
+            <span className="num">{notes(cargo.capacity)}</span>.
+          </p>
+        )}
 
         {quote && (
           <p className="muted" style={{ marginTop: 12 }}>
@@ -364,7 +388,7 @@ function TradePanel({ good, auth, onDone }) {
         )}
 
         <p style={{ marginTop: 12 }}>
-          <button disabled={busy || !quote}>
+          <button disabled={busy || !quote || (side === 'buy' && cargo && qty > cargo.free)}>
             {busy ? 'Executing…' : `${side === 'buy' ? 'Buy' : 'Sell'} ${qty}`}
           </button>
         </p>

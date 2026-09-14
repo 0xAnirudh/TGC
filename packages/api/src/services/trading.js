@@ -29,6 +29,7 @@ import {
   SELL_SPREAD_BPS,
   MAX_TRADE_SUPPLY_BPS,
   BOOTSTRAP_TRADE_QTY,
+  BASE_CARGO,
 } from '@tgc/shared';
 
 /**
@@ -161,7 +162,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   if (side === 'buy') {
     const { User: U } = await import('../models/User.js');
     const [used, user] = await Promise.all([cargoUsed(userId), U.findById(userId).lean()]);
-    const capacity = user?.cargoCapacity ?? 0;
+    const capacity = user?.cargoCapacity ?? BASE_CARGO;
     if (used + qty > capacity) {
       throw ApiError.badRequest('cargo_full', 'Not enough room in the hold', {
         used,
@@ -429,7 +430,7 @@ export async function getPortfolio(userId) {
 
   return {
     region,
-    cargo: { used: cargo, capacity: me?.cargoCapacity ?? 0 },
+    cargo: { used: cargo, capacity: me?.cargoCapacity ?? BASE_CARGO },
     debt: me?.debt ?? 0,
     cash,
     holdingsValue,
