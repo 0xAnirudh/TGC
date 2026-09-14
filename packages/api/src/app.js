@@ -29,6 +29,31 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '16kb' }));
 
+  /**
+   * CORS.
+   *
+   * In development the frontend is proxied by Vite, so every request is
+   * same-origin and this does nothing. In production the frontend is on
+   * Vercel and the API is on Render, which are different origins.
+   *
+   * WEB_ORIGIN is an explicit allow-list rather than a wildcard. A
+   * wildcard would let any site on the internet make authenticated
+   * requests with a user's token if it ever got hold of one.
+   */
+  app.use((req, res, next) => {
+    const allowed = process.env.WEB_ORIGIN;
+    const origin = req.get('origin');
+
+    if (allowed && origin && allowed.split(',').includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Vary', 'Origin');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
   app.use('/health', healthRouter);
   app.use('/auth', authRouter);
   app.use('/me', meRouter);

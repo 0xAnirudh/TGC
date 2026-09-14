@@ -6,6 +6,7 @@ import { driftTick } from '@tgc/api/src/services/drift.js';
 import { revalueAll } from '@tgc/api/src/services/leaderboard.js';
 import { generateNewspaper } from '@tgc/api/src/services/newspaper.js';
 import { log } from '@tgc/api/src/log.js';
+import { config } from '@tgc/api/src/config.js';
 
 /**
  * The scheduled job runner.
@@ -26,7 +27,7 @@ const JOBS = [
     // Every minute. Frequent enough that a chart has shape within an
     // hour, slow enough that a month of snapshots stays a manageable
     // collection.
-    schedule: '* * * * *',
+    schedule: config.DRIFT_CRON,
     lockTtlMs: 50_000,
     run: () => driftTick(),
   },
@@ -35,7 +36,7 @@ const JOBS = [
     // Every two minutes. The board is a ranking, not a live readout, and
     // valuing every holding against the curve is the most expensive
     // thing scheduled here.
-    schedule: '*/2 * * * *',
+    schedule: config.REVALUE_CRON,
     lockTtlMs: 110_000,
     run: () => revalueAll(),
   },
@@ -45,7 +46,7 @@ const JOBS = [
     // date, so an hourly run keeps today's edition current instead of
     // showing a stale one all day, and a missed midnight tick does not
     // cost a whole edition.
-    schedule: '0 * * * *',
+    schedule: config.NEWSPAPER_CRON,
     lockTtlMs: 110_000,
     run: () => generateNewspaper(),
   },

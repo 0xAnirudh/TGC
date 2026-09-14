@@ -53,6 +53,47 @@ const schema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  /**
+   * Job cadence, as cron expressions.
+   *
+   * Configurable because a hosted Redis free tier is billed per command,
+   * and the idle cost of these jobs is what actually consumes it. At the
+   * development cadence - drift every minute, revaluation every two -
+   * the system issues roughly 47 commands a minute doing nothing at all,
+   * which is about 68,000 a day. Upstash's free tier allows 500,000 a
+   * month, so the defaults would exhaust a month in a week before a
+   * single trade was placed.
+   *
+   * Production slows both down. See docs/DEPLOYMENT.md for the maths.
+   */
+  DRIFT_CRON: z.string().default('* * * * *'),
+  REVALUE_CRON: z.string().default('*/2 * * * *'),
+  NEWSPAPER_CRON: z.string().default('0 * * * *'),
+
+  /**
+   * How long the relay blocks waiting for new stream entries.
+   *
+   * Every expiry is one command. At 5 seconds that is 12 a minute
+   * forever; at 30 it is 2. The cost of the longer block is up to 30
+   * seconds of extra latency before a trade reaches Mongo, which matters
+   * to nothing on the read path - the live state is in Redis.
+   */
+  RELAY_BLOCK_MS: z.coerce.number().int().min(1_000).max(60_000).default(5_000),
+
+  /**
+   * Run the relay and job runner inside the API process.
+   *
+   * They are separate processes by design and separate processes in
+   * development. This exists because Render's free tier has no
+   * background workers - they start at $7/month each - so a free
+   * deployment has to co-locate them. Nothing about the code changes;
+   * only where it runs.
+   */
+  EMBED_WORKERS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);

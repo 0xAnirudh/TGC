@@ -17,7 +17,11 @@ export function useLivePrices(watch) {
   const [live, setLive] = useState({});
 
   useEffect(() => {
-    const socket = io({ auth: { token: getToken() ?? undefined } });
+    // Same reasoning as API_BASE in api.js: same-origin in development
+    // via the Vite proxy, explicit host in production.
+    const socket = io(import.meta.env.VITE_API_URL || undefined, {
+      auth: { token: getToken() ?? undefined },
+    });
 
     const apply = (updates) => {
       const list = Array.isArray(updates) ? updates : [updates];

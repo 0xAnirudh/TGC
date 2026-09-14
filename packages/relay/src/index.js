@@ -2,6 +2,7 @@ import { connectMongo, disconnectMongo } from '@tgc/api/src/db/mongo.js';
 import { connectRedis, disconnectRedis, getRedis } from '@tgc/api/src/redis/client.js';
 import { STREAM_TRADES } from '@tgc/api/src/redis/keys.js';
 import { log } from '@tgc/api/src/log.js';
+import { config } from '@tgc/api/src/config.js';
 import { projectEntry } from './project.js';
 
 /**
@@ -26,7 +27,7 @@ import { projectEntry } from './project.js';
 export const GROUP = 'relay';
 const CONSUMER = `relay-${process.pid}`;
 const BATCH = 100;
-const BLOCK_MS = 5_000;
+const BLOCK_MS = config.RELAY_BLOCK_MS;
 
 let running = false;
 let blockingClient = null;

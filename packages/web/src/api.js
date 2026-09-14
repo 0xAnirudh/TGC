@@ -13,9 +13,21 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
+/**
+ * Where the API lives.
+ *
+ * In development this is empty and requests go to /api/..., which Vite
+ * proxies to localhost:4000 - so the browser makes same-origin requests
+ * and there is no CORS to configure.
+ *
+ * In production the frontend is on Vercel and the API is on Render, so
+ * there is no proxy and VITE_API_URL points at the API directly.
+ */
+const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+
 export async function api(path, { method = 'GET', body } = {}) {
   const token = getToken();
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),

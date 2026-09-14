@@ -42,6 +42,45 @@ async function connectStores() {
   } catch (err) {
     log.error('realtime failed to attach', { err: err.message });
   }
+
+  await maybeEmbedWorkers();
+}
+
+/**
+ * Run the relay and job runner inside this process.
+ *
+ * They are separate processes by design, and separate processes in
+ * development. This exists for one reason: Render's free tier has no
+ * background workers - they start at $7 a month each - so a free
+ * deployment has nowhere else to put them.
+ *
+ * Nothing about either worker changes. Both already export `start()` and
+ * only self-launch when run as the process entry point, so co-locating
+ * them is a deployment decision rather than a code change. Set
+ * EMBED_WORKERS=false and run them separately the moment that is an
+ * option.
+ *
+ * Imported dynamically so a deployment that does not embed them never
+ * loads them at all.
+ */
+async function maybeEmbedWorkers() {
+  if (!config.EMBED_WORKERS) return;
+
+  log.warn('running relay and jobs in-process', {
+    why: 'EMBED_WORKERS is set - free hosting has no background workers',
+  });
+
+  try {
+    const [relay, jobs] = await Promise.all([
+      import('@tgc/relay/src/index.js'),
+      import('@tgc/jobs/src/index.js'),
+    ]);
+    // The relay loops forever, so it is deliberately not awaited.
+    relay.start().catch((err) => log.error('embedded relay failed', { err: err.message }));
+    await jobs.start();
+  } catch (err) {
+    log.error('failed to start embedded workers', { err: err.message });
+  }
 }
 
 connectStores();
