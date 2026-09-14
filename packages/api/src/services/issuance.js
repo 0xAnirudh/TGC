@@ -5,6 +5,7 @@ import { getRedis } from '../redis/client.js';
 import { goodSupply, goodBasePrice, userCash, ECON_BURNED } from '../redis/keys.js';
 import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded } from './accounts.js';
+import { cacheGoodMeta } from './goodCache.js';
 import { log } from '../log.js';
 import { MIN_CURVE_N, MAX_CURVE_N, MIN_CURVE_K } from '@tgc/shared';
 
@@ -122,6 +123,7 @@ export async function issueGood({ userId, name, colorToken, k, n, basePrice }) {
 
   const id = good._id.toString();
   await getRedis().mset(goodSupply(id), 0, goodBasePrice(id), basePrice);
+  await cacheGoodMeta(good);
   await User.updateOne({ _id: userId }, { $set: { cash: cashAfter } });
 
   log.info('good issued', { name, issuer: user.username, fee: ISSUE_FEE });

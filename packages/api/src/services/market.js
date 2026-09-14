@@ -5,6 +5,7 @@ import { goodSupply, goodBasePrice } from '../redis/keys.js';
 import { log } from '../log.js';
 import { ApiError } from '../util/errors.js';
 import { price, buyCost, sellBreakdown, maxTradeQty } from '@tgc/shared';
+import { cacheGoodMeta } from './goodCache.js';
 
 /**
  * Market state lives in two places, and which one wins matters.
@@ -30,6 +31,10 @@ import { price, buyCost, sellBreakdown, maxTradeQty } from '@tgc/shared';
 export async function warmMarketState() {
   const redis = getRedis();
   const markets = await Market.find().lean();
+
+  // Curve shapes go in alongside the market state. They are immutable,
+  // so this is a straight write rather than a conditional one.
+  for (const good of await Good.find()) await cacheGoodMeta(good);
 
   let warmed = 0;
   for (const m of markets) {

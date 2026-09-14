@@ -5,6 +5,7 @@ import { Good } from '../models/Good.js';
 import { Market } from '../models/Market.js';
 import { goodSupply, goodBasePrice } from '../redis/keys.js';
 import { log } from '../log.js';
+import { cacheGoodMeta } from '../services/goodCache.js';
 
 /**
  * Seed the starting market.
@@ -68,6 +69,7 @@ async function seed({ reset = false } = {}) {
     // NX so re-running the seed never resets a market that has traded.
     await redis.set(goodSupply(id), 0, 'NX');
     await redis.set(goodBasePrice(id), spec.basePrice, 'NX');
+    await cacheGoodMeta(good);
   }
 
   const count = await Good.countDocuments();

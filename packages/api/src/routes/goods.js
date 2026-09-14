@@ -5,6 +5,7 @@ import { ApiError } from '../util/errors.js';
 import { validateQuery } from '../middleware/validate.js';
 import { quoteQuerySchema } from '../schemas/market.js';
 import { listGoodsWithMarket, readMarketState, computeQuote } from '../services/market.js';
+import { readGoodMeta } from '../services/goodCache.js';
 import { priceHistory, VALID_RANGES } from '../services/history.js';
 import { price } from '@tgc/shared';
 import { z } from 'zod';
@@ -56,12 +57,19 @@ goodsRouter.get('/:id', async (req, res) => {
  * the immutable curve shape. NFR-1 holds this to p95 under 10ms.
  */
 goodsRouter.get('/:id/quote', validateQuery(quoteQuerySchema), async (req, res) => {
-  const good = await findGoodOr404(req.params.id);
-  const { supply, basePrice } = await readMarketState(good._id.toString());
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw ApiError.notFound('good_not_found', 'No good with that id');
+  }
+
+  // Curve shape from the Redis cache, live numbers from Redis. No Mongo
+  // on this path at all - see the comment on the goodMeta key for what
+  // that was costing.
+  const good = await readGoodMeta(req.params.id);
+  const { supply, basePrice } = await readMarketState(good.id);
   const { side, qty } = req.validatedQuery;
 
   res.json({
-    goodId: good._id.toString(),
+    goodId: good.id,
     name: good.name,
     ...computeQuote({ basePrice, supply, k: good.k, n: good.n, side, qty }),
   });

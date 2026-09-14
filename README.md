@@ -43,8 +43,8 @@ used Redis for more than caching.
 | 11 | Issuing goods | done |
 | 12 | Newspaper | done |
 | 13 | Frontend | done — **playable** |
-| 14 | Load testing | |
-| 15 | Deployment | |
+| 14 | Load testing | done |
+| 15 | Deployment | config ready — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
 ## Layout
 
@@ -98,6 +98,42 @@ npm run format   # prettier
 The simulation takes flags: `npm run sim -- --trades=50000 --seed=7
 --players=500`. It is seeded, so a run that fails is a run you can
 reproduce.
+
+## Benchmarks
+
+Measured with `npm run loadtest`, against the API on a local machine with
+MongoDB on Atlas and Redis local. 40 accounts, 8 goods, 20 concurrent
+users, 1,500 quotes and 600 trades.
+
+| Path | p50 | p95 | p99 | Target |
+|---|---|---|---|---|
+| `GET /goods/:id/quote` | 2.94ms | **8.69ms** | 11.64ms | NFR-1: p95 < 10ms |
+| `POST /trades` | 6.25ms | **12.35ms** | 14.06ms | NFR-2: p95 < 50ms |
+
+The money-supply invariant balanced to the exact Note after the run.
+
+Latency at other concurrency levels, same hardware:
+
+| Concurrent users | quote p95 | trade p95 |
+|---|---|---|
+| 1 | 3.27ms | 3.28ms |
+| 5 | 3.15ms | 4.51ms |
+| 20 | 8.69ms | 12.35ms |
+
+**Methodology, and one thing worth knowing.** The first version of this
+load test fired every request at once with `Promise.all` and reported a
+quote p95 of **12.8 seconds**. That number measured nothing but how long
+1,500 requests take to queue through a single Node process - latency
+under a stampede is queueing time, not service time. The test now holds
+concurrency fixed at a set number of virtual users, which is what the
+figures above describe.
+
+It also found a real defect: quote p95 was 827ms against a p50 of 42ms,
+and the entire tail was one Atlas round trip. Both the quote and trade
+paths were calling `Good.findById` for the curve parameters, so NFR-1's
+"no Mongo round trip on the hot path" was not actually true. `k` and `n`
+never change after a good is created, so they are now cached in Redis -
+which is what took quote p95 from 827ms to 8.69ms.
 
 ## Phase 0 result
 

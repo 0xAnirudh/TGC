@@ -14,7 +14,8 @@
     "sim": "node sim/src/run.js",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "loadtest": "node loadtest/run.mjs"
   },
   "devDependencies": {
     "eslint": "^10.10.0",

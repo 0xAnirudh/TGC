@@ -573,6 +573,62 @@ checking the half that was never broken.
 
 ---
 
+## FINDING-009 — A load test that stampedes measures queueing, not latency
+
+**Phase 14.**
+
+The first version of `loadtest/run.mjs` issued every request at once with
+`Promise.all` and reported a quote p95 of **12.8 seconds** against an
+NFR-1 target of 10 milliseconds.
+
+Nothing was wrong with the system. The test was measuring how long 1,500
+requests take to queue through a single Node process. Latency under a
+stampede is queueing time; service time is what the requirement is about,
+and the two are unrelated once the queue is deep.
+
+The runner now holds concurrency fixed at a set number of virtual users -
+each takes the next request only when its previous one finishes - which
+is what every real load tool does and why they all talk about VUs rather
+than total requests.
+
+Published figures state the concurrency level they were taken at, for the
+same reason.
+
+---
+
+## FINDING-010 — The hot path was not actually Redis-only
+
+**Phase 14.**
+
+With honest concurrency, quote p95 came back at **827ms against a p50 of
+42ms**. A tail twenty times the median is not load - it is one slow
+dependency being hit sometimes.
+
+It was MongoDB. Both `GET /goods/:id/quote` and `POST /trades` were
+calling `Good.findById` to fetch `k` and `n`, so every request on the
+supposedly Redis-only hot path made a round trip to Atlas. ADR-001 and
+the Phase 3 notes both claim quotes touch no database. That claim had
+been false since Phase 3 and nothing noticed, because local tests are
+fast enough not to care and correctness tests do not measure time.
+
+`k`, `n`, `name` and `colorToken` are fixed when a good is created and
+never change, so they are now cached in a Redis hash. There is no
+invalidation logic because there is nothing that invalidates.
+
+| | before | after |
+|---|---|---|
+| quote p50 | 42ms | 2.94ms |
+| quote p95 | 827ms | 8.69ms |
+| trade p95 | 827ms | 12.35ms |
+
+**The lesson worth keeping:** a performance claim written in a
+documentation file is not a constraint on anything. This one survived
+eleven phases of review because nothing executed it. The load test is the
+first thing in the project that could tell the difference between the
+architecture and the code.
+
+---
+
 ## Phase 0 findings
 
 The simulation is in `sim/`. Run it with `npm run sim`. Default run:

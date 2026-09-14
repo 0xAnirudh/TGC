@@ -14,6 +14,25 @@ export const goodSupply = (goodId) => `mkt:${goodId}:supply`;
 /** Live base price of a good. Moved by the drift job from Phase 8. */
 export const goodBasePrice = (goodId) => `mkt:${goodId}:basePrice`;
 
+/**
+ * A good's immutable identity and curve shape: name, colour, k, n.
+ *
+ * Cached in Redis because it is needed on both hot paths - a quote and a
+ * trade both have to know k and n - and reading it from Mongo put an
+ * Atlas round trip in front of an operation that is otherwise pure
+ * arithmetic on two Redis values.
+ *
+ * That was not a theoretical cost. Load testing showed quote p95 at
+ * 827ms against a p50 of 42ms: the tail was entirely the database. NFR-1
+ * asks for p95 under 10ms, and no amount of tuning gets there with a
+ * network hop in the path.
+ *
+ * Safe to cache indefinitely because none of these fields ever change
+ * after the good is created. There is no invalidation problem because
+ * there is nothing to invalidate.
+ */
+export const goodMeta = (goodId) => `good:${goodId}:meta`;
+
 /** A player's cash. The source of truth from Phase 5 onward. */
 export const userCash = (userId) => `user:${userId}:cash`;
 

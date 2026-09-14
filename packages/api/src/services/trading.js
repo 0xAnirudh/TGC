@@ -14,6 +14,7 @@ import {
 import { ApiError } from '../util/errors.js';
 import { ensureAccountLoaded, readCash, readHoldings } from './accounts.js';
 import { publishPriceChange } from '../realtime/publish.js';
+import { readGoodMeta } from './goodCache.js';
 import {
   buyCost,
   sellBreakdown,
@@ -45,13 +46,19 @@ import {
 /** How far the price may move against the caller before the trade is refused. */
 export const DEFAULT_SLIPPAGE_BPS = 100; // 1%
 
+/**
+ * The good's curve shape, from the Redis cache.
+ *
+ * k and n never change, so there is no reason for a trade to ask Mongo
+ * for them. Doing so put an Atlas round trip inside a path that is
+ * otherwise Redis-only, and it showed up as an 827ms p95 against a 42ms
+ * p50 under load - the tail was the database, every time.
+ */
 async function loadGood(goodId) {
   if (!mongoose.Types.ObjectId.isValid(goodId)) {
     throw ApiError.notFound('good_not_found', 'No good with that id');
   }
-  const good = await Good.findById(goodId);
-  if (!good) throw ApiError.notFound('good_not_found', 'No good with that id');
-  return good;
+  return readGoodMeta(goodId);
 }
 
 /**
@@ -66,10 +73,7 @@ async function loadGood(goodId) {
  */
 async function computeLimit({ good, side, qty, slippageBps }) {
   const redis = getRedis();
-  const [supplyRaw, baseRaw] = await redis.mget(
-    goodSupply(good._id.toString()),
-    goodBasePrice(good._id.toString()),
-  );
+  const [supplyRaw, baseRaw] = await redis.mget(goodSupply(good.id), goodBasePrice(good.id));
   if (supplyRaw === null || baseRaw === null) {
     throw ApiError.notFound('market_not_found', 'No live market for that good');
   }
@@ -138,7 +142,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
     slippageBps: tolerance,
   });
 
-  const id = good._id.toString();
+  const id = good.id;
   const redis = getRedis();
 
   // Everything that has to be indivisible happens inside this one call.
@@ -179,7 +183,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   // was written to the ledger must not fail because a notification
   // could not be delivered.
   publishPriceChange({
-    goodId: good._id.toString(),
+    goodId: good.id,
     price: Math.round(price(basePrice, supplyAfter, good.k, good.n) * 100) / 100,
     supply: supplyAfter,
     side,
@@ -193,7 +197,7 @@ export async function executeTrade({ userId, goodId, side, qty, slippageBps }) {
   return {
     trade: {
       id: streamId,
-      goodId: good._id.toString(),
+      goodId: good.id,
       side,
       quantity: qty,
       notional,
